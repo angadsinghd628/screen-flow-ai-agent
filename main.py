@@ -26,13 +26,14 @@ from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 import keyboard
 from langchain_core.messages import BaseMessage, AIMessage
 
-from config import DEFAULT_HOTKEY, TOGGLE_HOTKEY, CONTEXT_FILE, MAX_MESSAGES
+from config import DEFAULT_HOTKEY, TOGGLE_HOTKEY, CONTEXT_FILE, MAX_MESSAGES, HTTP_PROXY
 from utils.image_tool import qimage_to_pil, pil_to_base64, compress_image
 from utils.context_store import load_context, save_context
 from utils.api_key_manager import get_api_key, set_api_key
 from agent.graph import build_graph, stream_graph
 from agent.llm_client import build_multimodal_message
 from gui.capture_window import CaptureWindow
+from gui.input_widget import InputDialog
 from gui.result_window import ResultWindow
 
 
@@ -270,18 +271,28 @@ class ScreenAIAgent(QObject):
         self._capture_win.showFullScreen()
 
     def _on_image_captured(self, image: QImage, capture_rect: QRect = None):
-        """截图完成 → 读取输入框文本 → 合并发送。"""
+        """截图完成 → 弹出追问输入框（预填已有文本）→ AI 处理。"""
         self._capture_win = None
         self._last_capture_rect = capture_rect
-
-        # 读取当前输入框文本（不再弹 InputDialog）
-        user_text = self._result_window.get_input_text()
-        self._result_window.clear_input()
 
         # QImage → PIL → 压缩 → Base64
         pil_img = qimage_to_pil(image)
         pil_img = compress_image(pil_img)
         image_base64 = pil_to_base64(pil_img)
+
+        # 弹出输入对话框，预填当前输入框文本
+        existing_text = self._result_window.get_input_text()
+        input_dlg = InputDialog()
+        if existing_text:
+            input_dlg.set_text(existing_text)
+
+        if input_dlg.exec() == InputDialog.DialogCode.Accepted:
+            user_text = input_dlg.get_text()
+            # 用户确认后清空常驻输入框
+            self._result_window.clear_input()
+        else:
+            # 用户取消（Escape），不发送
+            return
 
         self._last_user_text = user_text
         self._last_image_b64 = image_base64
@@ -447,6 +458,14 @@ def main():
         print("=" * 58)
     except UnicodeEncodeError:
         pass  # Windows console GBK encoding doesn't support emoji
+    print()
+
+    # 设置网络代理（火山引擎 API 需要）
+    if HTTP_PROXY:
+        import os
+        os.environ["HTTP_PROXY"] = HTTP_PROXY
+        os.environ["HTTPS_PROXY"] = HTTP_PROXY
+        print(f"   Proxy:      {HTTP_PROXY}")
     print()
 
     app = QApplication(sys.argv)

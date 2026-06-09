@@ -144,6 +144,15 @@ class InputDialog(QDialog):
         self.confirmed.emit("")
         self.accept()
 
+    def set_text(self, text: str):
+        """预填输入文本（截图后继承已有输入）。"""
+        if text:
+            self._text_edit.setPlainText(text)
+            # 光标移到末尾
+            cursor = self._text_edit.textCursor()
+            cursor.movePosition(cursor.MoveOperation.End)
+            self._text_edit.setTextCursor(cursor)
+
     def get_text(self) -> str:
         """获取用户输入文本。"""
         return self._text_edit.toPlainText().strip()
