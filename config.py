@@ -24,7 +24,7 @@ DOUBAO_MODEL_NAME = get_model() or os.environ.get("DOUBAO_MODEL_NAME", "doubao-s
 MAX_TURNS = 5                 # 最多保留 5 轮对话（纯文本）
 MAX_MESSAGES = MAX_TURNS * 2  # 最多保留 10 条消息
 MAX_TOKEN_ESTIMATE = 8000     # 总 token 上限
-MAX_OUTPUT_TOKENS = 2048      # 模型每次最大输出 token（加快速度）
+# MAX_OUTPUT_TOKENS 已移除，不限制模型输出长度，靠 system prompt 控制精简度
 
 # ============================================================
 # 图片处理配置

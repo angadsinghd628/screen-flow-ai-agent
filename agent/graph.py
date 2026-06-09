@@ -14,12 +14,15 @@ from typing import AsyncIterator, Optional, List
 
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
 
 from agent.state import AgentState
 from agent.llm_client import ChatDoubaoVL, build_text_message, build_multimodal_message
 from config import MAX_TOKEN_ESTIMATE
 from utils.token_counter import is_over_token_limit, strip_images_from_message
+
+# 系统提示词：要求模型精简回答
+SYSTEM_PROMPT = "你是一个高效的桌面截图助手。请用最精炼的语言直接回答用户的问题，给出核心要点即可，不要啰嗦、不要展开无关内容。如果用户只是发图没有提问，请简要描述图片内容。"
 
 
 
@@ -58,7 +61,9 @@ def call_vlm_node(state: AgentState) -> dict:
         return {"messages": [AIMessage(content="没有收到任何输入。")]}
 
     llm = ChatDoubaoVL()
-    response = llm.invoke(list(messages))
+    # 添加系统提示词，要求精简回答
+    all_messages = [SystemMessage(content=SYSTEM_PROMPT)] + list(messages)
+    response = llm.invoke(all_messages)
     return {"messages": [response]}
 
 
@@ -111,21 +116,24 @@ async def stream_graph(
     else:
         input_msg = HumanMessage(content="请描述当前看到的内容。")
 
-    # 2. 合并历史消息
-    all_messages = list(messages) + [input_msg]
+    # 2. 合并历史消息，添加系统提示词要求精简
+    all_messages = [SystemMessage(content=SYSTEM_PROMPT)] + list(messages) + [input_msg]
 
-    # 3. Trim 历史
-    max_msgs = max_turns * 2
+    # 3. Trim 历史（保护 system prompt 不被裁剪）
+    max_msgs = max_turns * 2 + 1  # +1 给 system prompt
     if len(all_messages) > max_msgs:
-        all_messages = all_messages[-max_msgs:]
+        # 保留 system prompt (index 0) + 最近的消息
+        all_messages = [all_messages[0]] + all_messages[-(max_msgs - 1):]
 
     if is_over_token_limit(all_messages, MAX_TOKEN_ESTIMATE):
+        # 从 index 1 开始剥离旧图片（跳过 system prompt）
         num_strip = max(0, len(all_messages) - 4)
-        for i in range(num_strip):
+        for i in range(1, min(num_strip + 1, len(all_messages))):
             all_messages[i] = strip_images_from_message(all_messages[i])
 
-    while is_over_token_limit(all_messages, MAX_TOKEN_ESTIMATE) and len(all_messages) > 2:
-        all_messages = all_messages[2:]
+    while is_over_token_limit(all_messages, MAX_TOKEN_ESTIMATE) and len(all_messages) > 3:
+        # 移除 index 1,2（保留 system prompt）
+        all_messages = [all_messages[0]] + all_messages[3:]
 
     # 4. 直接流式调用 ChatDoubaoVL
     llm = ChatDoubaoVL()

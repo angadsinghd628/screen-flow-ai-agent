@@ -28,7 +28,7 @@ from pydantic import Field, PrivateAttr
 
 from volcenginesdkarkruntime import Ark
 
-from config import ARK_API_KEY, ARK_BASE_URL, DOUBAO_MODEL_NAME, MAX_OUTPUT_TOKENS
+from config import ARK_API_KEY, ARK_BASE_URL, DOUBAO_MODEL_NAME
 
 
 class ChatDoubaoVL(BaseChatModel):
@@ -53,7 +53,6 @@ class ChatDoubaoVL(BaseChatModel):
     api_key: str = Field(default="")
     base_url: str = Field(default=ARK_BASE_URL)
     temperature: float = Field(default=0.7)
-    max_tokens: int = Field(default=MAX_OUTPUT_TOKENS)
 
     _client: Ark = PrivateAttr()
 
@@ -112,7 +111,6 @@ class ChatDoubaoVL(BaseChatModel):
             model=self.model_name,
             input=ark_input,
             temperature=self.temperature,
-            max_output_tokens=self.max_tokens,
         )
 
         # 从 Response 对象中提取输出文本
@@ -146,7 +144,6 @@ class ChatDoubaoVL(BaseChatModel):
             model=self.model_name,
             input=ark_input,
             temperature=self.temperature,
-            max_output_tokens=self.max_tokens,
             stream=True,
         )
 
