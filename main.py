@@ -26,14 +26,13 @@ from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 import keyboard
 from langchain_core.messages import BaseMessage, AIMessage
 
-from config import DEFAULT_HOTKEY, CONTEXT_FILE, MAX_MESSAGES
+from config import DEFAULT_HOTKEY, TOGGLE_HOTKEY, CONTEXT_FILE, MAX_MESSAGES
 from utils.image_tool import qimage_to_pil, pil_to_base64, compress_image
 from utils.context_store import load_context, save_context
 from utils.api_key_manager import get_api_key, set_api_key
 from agent.graph import build_graph, stream_graph
 from agent.llm_client import build_multimodal_message
 from gui.capture_window import CaptureWindow
-from gui.input_widget import InputDialog
 from gui.result_window import ResultWindow
 
 
@@ -101,8 +100,10 @@ class ScreenAIAgent(QObject):
         self._graph = build_graph()
         print("[AIRAG] LangGraph 状态机已就绪")
 
-        # UI 组件
-        self._result_window: Optional[ResultWindow] = None
+        # UI 组件 — ResultWindow 常驻显示
+        self._result_window = ResultWindow()
+        self._result_window.follow_up_requested.connect(self._on_follow_up)
+        self._result_window.show()
         self._stream_worker: Optional[StreamWorker] = None
         self._capture_win: Optional[CaptureWindow] = None
 
@@ -127,7 +128,7 @@ class ScreenAIAgent(QObject):
     def _setup_tray(self):
         """创建系统托盘图标和右键菜单。"""
         self._tray = QSystemTrayIcon()
-        self._tray.setToolTip("AIRAG 截图助手\n按 Ctrl+D 截图")
+        self._tray.setToolTip("AIRAG 截图助手\nCtrl+D 截图  Ctrl+H 显隐")
 
         # 使用一个简单的内置图标（没有外部图标文件）
         pixmap = self._create_tray_icon_pixmap()
@@ -166,7 +167,7 @@ class ScreenAIAgent(QObject):
         # 启动气泡提示
         self._tray.showMessage(
             "AIRAG 截图助手",
-            f"已启动！\n按 {DEFAULT_HOTKEY.upper()} 开始截图\n或右键托盘图标操作",
+            f"已启动！\n{DEFAULT_HOTKEY.upper()} 截图发送\n{TOGGLE_HOTKEY.upper()} 隐藏/显示\n直接输入文字即可对话",
             QSystemTrayIcon.MessageIcon.Information,
             3000,
         )
@@ -215,12 +216,14 @@ class ScreenAIAgent(QObject):
     # ============================================================
 
     def _register_hotkey(self):
-        """注册全局快捷键。"""
+        """注册全局快捷键 Ctrl+D（截图）和 Ctrl+H（显隐）。"""
         try:
             keyboard.add_hotkey(DEFAULT_HOTKEY, self._on_hotkey_triggered)
+            keyboard.add_hotkey(TOGGLE_HOTKEY, self._on_hotkey_toggle)
             self._hotkey_registered = True
-            print(f"[AIRAG] [OK] 快捷键 [ {DEFAULT_HOTKEY.upper()} ] 已注册成功")
-            print(f"         现在按 {DEFAULT_HOTKEY.upper()} 即可截图！")
+            print(f"[AIRAG] [OK] 快捷键注册成功")
+            print(f"         {DEFAULT_HOTKEY.upper()} — 截图发送")
+            print(f"         {TOGGLE_HOTKEY.upper()} — 隐藏/显示窗口")
         except Exception as e:
             self._hotkey_registered = False
             print(f"[AIRAG] [WARN] 快捷键注册失败: {e}")
@@ -233,10 +236,24 @@ class ScreenAIAgent(QObject):
 
     def _on_hotkey_triggered(self):
         """
-        快捷键回调 — 在 keyboard 库的后台线程中运行。
+        Ctrl+D 回调 — 在 keyboard 库的后台线程中运行。
         QTimer.singleShot(0, ...) 安全切回主线程。
         """
         QTimer.singleShot(0, self._start_capture_flow)
+
+    def _on_hotkey_toggle(self):
+        """
+        Ctrl+H 回调 — 切换 ResultWindow 显隐。
+        """
+        QTimer.singleShot(0, self._toggle_window)
+
+    def _toggle_window(self):
+        """切换常驻窗口的显示/隐藏（主线程）。"""
+        if self._result_window.isVisible():
+            self._result_window.hide()
+        else:
+            self._result_window.show()
+            self._result_window.raise_()
 
     # ============================================================
     # Step 1: Capture
@@ -253,23 +270,18 @@ class ScreenAIAgent(QObject):
         self._capture_win.showFullScreen()
 
     def _on_image_captured(self, image: QImage, capture_rect: QRect = None):
-        """截图完成 → 处理图片 → 打开追问输入框。"""
+        """截图完成 → 读取输入框文本 → 合并发送。"""
         self._capture_win = None
         self._last_capture_rect = capture_rect
 
-        # QImage → PIL → 压缩
-        self._captured_pil = qimage_to_pil(image)
-        self._captured_pil = compress_image(self._captured_pil)
+        # 读取当前输入框文本（不再弹 InputDialog）
+        user_text = self._result_window.get_input_text()
+        self._result_window.clear_input()
 
-        # 弹出输入对话框
-        input_dlg = InputDialog()
-        if input_dlg.exec() == InputDialog.DialogCode.Accepted:
-            user_text = input_dlg.get_text()
-        else:
-            user_text = ""
-
-        # 图片 → Base64
-        image_base64 = pil_to_base64(self._captured_pil)
+        # QImage → PIL → 压缩 → Base64
+        pil_img = qimage_to_pil(image)
+        pil_img = compress_image(pil_img)
+        image_base64 = pil_to_base64(pil_img)
 
         self._last_user_text = user_text
         self._last_image_b64 = image_base64
@@ -283,9 +295,6 @@ class ScreenAIAgent(QObject):
 
     def _run_ai_stream(self, user_text: str, image_base64: Optional[str] = None):
         """启动 AI 流式处理。不清空历史，在已有内容上追加新的问答。"""
-        if self._result_window is None:
-            self._result_window = ResultWindow()
-            self._result_window.follow_up_requested.connect(self._on_follow_up)
 
         # 只有新截图时才重新定位窗口
         if image_base64 and self._last_capture_rect and not self._last_capture_rect.isEmpty():
@@ -375,13 +384,11 @@ class ScreenAIAgent(QObject):
     # ============================================================
 
     def _clear_history(self):
-        """清空对话历史。"""
+        """清空对话历史（窗口保持显示）。"""
         self._messages = []
         save_context(self._messages, CONTEXT_FILE)
         print("[AIRAG] 对话历史已清空")
-        if self._result_window:
-            self._result_window.clear_content()
-            self._result_window.hide()
+        self._result_window.clear_content()
         self._tray.showMessage(
             "AIRAG",
             "对话历史已清空",
@@ -428,7 +435,9 @@ def main():
         print("=" * 58)
         print("   AIRAG - AI Screenshot Assistant")
         print("=" * 58)
-        print(f"   Hotkey:     {DEFAULT_HOTKEY.upper()}")
+        print(f"   {DEFAULT_HOTKEY.upper()} — 截图发送")
+        print(f"   {TOGGLE_HOTKEY.upper()} — 隐藏/显示窗口")
+        print(f"   直接输入文字即可与 AI 对话")
         print(f"   Model:      doubao-seed-2-0-lite-260428")
         print(f"   Context:    max {MAX_MESSAGES} messages")
         print("=" * 58)

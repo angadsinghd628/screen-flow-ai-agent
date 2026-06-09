@@ -304,6 +304,14 @@ class ResultWindow(QWidget):
 
     # ---- 追问 ----
 
+    def get_input_text(self) -> str:
+        """获取底部追问输入框当前文本。"""
+        return self._ask_input.text().strip()
+
+    def clear_input(self):
+        """清空底部追问输入框。"""
+        self._ask_input.clear()
+
     def _send_follow_up(self):
         """用户按 Enter 或点击发送按钮时触发。"""
         text = self._ask_input.text().strip()

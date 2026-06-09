@@ -9,6 +9,7 @@ from utils.api_key_manager import get_api_key, get_model
 # 快捷键
 # ============================================================
 DEFAULT_HOTKEY = "ctrl+d"
+TOGGLE_HOTKEY = "ctrl+h"
 
 # ============================================================
 # 豆包 VL API 配置 (火山引擎方舟)
