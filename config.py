@@ -3,7 +3,7 @@ AIRAG 全局配置文件
 """
 import os
 
-from utils.api_key_manager import get_api_key, get_model
+from utils.api_key_manager import get_api_key, get_model, get_proxy
 
 # ============================================================
 # 快捷键
@@ -14,7 +14,7 @@ TOGGLE_HOTKEY = "ctrl+f"
 # ============================================================
 # 网络代理（访问火山引擎 API 需要）
 # ============================================================
-HTTP_PROXY = "http://127.0.0.1:7897"   # 改成你的代理地址，不需要则留空 ""
+HTTP_PROXY = get_proxy()   # 从 airag_config.json 读取，或通过设置界面配置
 
 # ============================================================
 # 豆包 VL API 配置 (火山引擎方舟)

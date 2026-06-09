@@ -31,7 +31,7 @@ EXCLUDES = [
 
 HIDDEN_IMPORTS = [
     'PyQt6', 'PyQt6.QtCore', 'PyQt6.QtGui', 'PyQt6.QtWidgets',
-    'keyboard', 'keyboard._winkeyboard', 'keyboard._keyboard_event',
+    'pynput', 'pynput.keyboard', 'pynput._util',
     'PIL', 'PIL.Image',
     'pydantic', 'pydantic.deprecated', 'pydantic.decorators',
     'asyncio', 'typing_extensions',

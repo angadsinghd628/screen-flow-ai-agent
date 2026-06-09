@@ -1,5 +1,5 @@
 """
-API Key 输入弹窗 — 首次使用或修改 API Key 时弹出。
+设置弹窗 — API Key + 代理地址配置。
 """
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QColor, QPalette
@@ -8,17 +8,17 @@ from PyQt6.QtWidgets import (
     QPushButton, QLabel,
 )
 
-from utils.api_key_manager import get_api_key, set_api_key, get_model
+from utils.api_key_manager import get_api_key, set_api_key, get_proxy, set_proxy
 
 
 class ApiKeyDialog(QDialog):
     """
-    API Key 设置弹窗。
+    API Key + 代理设置弹窗。
 
     用法:
         dlg = ApiKeyDialog()
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            print("API Key 已保存")
+            print("设置已保存")
     """
 
     def __init__(self, parent=None):
@@ -26,8 +26,8 @@ class ApiKeyDialog(QDialog):
         self._setup_ui()
 
     def _setup_ui(self):
-        self.setWindowTitle("AIRAG - API Key 设置")
-        self.setFixedSize(440, 180)
+        self.setWindowTitle("Ai_Flow - 设置")
+        self.setFixedSize(460, 290)
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
@@ -44,38 +44,63 @@ class ApiKeyDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 16, 20, 14)
-        layout.setSpacing(10)
+        layout.setSpacing(8)
 
         # 标题
-        title = QLabel("请输入火山引擎方舟 API Key")
-        title.setFont(QFont("Microsoft YaHei", 12))
+        title = QLabel("⚙️ 设置")
+        title.setFont(QFont("Microsoft YaHei", 13))
         title.setStyleSheet("color: #aaccff; font-weight: bold;")
         layout.addWidget(title)
 
-        desc = QLabel("API Key 将保存在程序目录下，下次启动自动加载。")
-        desc.setFont(QFont("Microsoft YaHei", 10))
-        desc.setStyleSheet("color: #8899aa;")
-        layout.addWidget(desc)
+        # ---- API Key ----
+        key_label = QLabel("🔑 火山引擎 API Key")
+        key_label.setFont(QFont("Microsoft YaHei", 10))
+        key_label.setStyleSheet("color: #aabbcc; margin-top: 4px;")
+        layout.addWidget(key_label)
 
-        # 输入框
         current_key = get_api_key()
-        self._input = QLineEdit()
-        self._input.setPlaceholderText("粘贴你的 API Key（例如：c774d2b6-xxxx-xxxx-xxxx-xxxxxxxxxxxx）")
-        self._input.setEchoMode(QLineEdit.EchoMode.Password)
-        self._input.setFont(QFont("Consolas", 11))
-        self._input.setStyleSheet("""
+        self._key_input = QLineEdit()
+        self._key_input.setPlaceholderText("粘贴 API Key（例如：c774d2b6-xxxx-xxxx-xxxx-xxxxxxxxxxxx）")
+        self._key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self._key_input.setFont(QFont("Consolas", 10))
+        self._key_input.setStyleSheet("""
             QLineEdit {
-                background-color: #1e1e28;
-                color: #e0e0e0;
-                border: 1px solid #555;
-                border-radius: 5px;
-                padding: 8px 12px;
+                background-color: #1e1e28; color: #e0e0e0;
+                border: 1px solid #555; border-radius: 5px; padding: 7px 10px;
             }
             QLineEdit:focus { border-color: #4a8af4; }
         """)
         if current_key:
-            self._input.setText(current_key)
-        layout.addWidget(self._input)
+            self._key_input.setText(current_key)
+        layout.addWidget(self._key_input)
+
+        # ---- 代理地址 ----
+        proxy_label = QLabel("🌐 代理地址（访问 API 需要）")
+        proxy_label.setFont(QFont("Microsoft YaHei", 10))
+        proxy_label.setStyleSheet("color: #aabbcc; margin-top: 6px;")
+        layout.addWidget(proxy_label)
+
+        current_proxy = get_proxy()
+        self._proxy_input = QLineEdit()
+        self._proxy_input.setPlaceholderText("例如：http://127.0.0.1:7890，不需要则留空")
+        self._proxy_input.setFont(QFont("Consolas", 10))
+        self._proxy_input.setStyleSheet("""
+            QLineEdit {
+                background-color: #1e1e28; color: #e0e0e0;
+                border: 1px solid #555; border-radius: 5px; padding: 7px 10px;
+            }
+            QLineEdit:focus { border-color: #4a8af4; }
+        """)
+        if current_proxy:
+            self._proxy_input.setText(current_proxy)
+        layout.addWidget(self._proxy_input)
+
+        desc = QLabel("设置保存在程序目录下，下次启动自动加载。")
+        desc.setFont(QFont("Microsoft YaHei", 9))
+        desc.setStyleSheet("color: #667788;")
+        layout.addWidget(desc)
+
+        layout.addStretch()
 
         # 按钮行
         btn_layout = QHBoxLayout()
@@ -94,11 +119,11 @@ class ApiKeyDialog(QDialog):
 
         btn_layout.addStretch()
 
-        save_btn = QPushButton("保存并继续")
+        save_btn = QPushButton("保存")
         save_btn.setStyleSheet("""
             QPushButton {
                 background: #2b5db8; color: white; border: none;
-                border-radius: 5px; padding: 7px 20px; font-size: 12px; font-weight: bold;
+                border-radius: 5px; padding: 7px 22px; font-size: 12px; font-weight: bold;
             }
             QPushButton:hover { background: #3a6fd8; }
         """)
@@ -107,11 +132,28 @@ class ApiKeyDialog(QDialog):
 
         layout.addLayout(btn_layout)
 
+        # 居中
+        self._center_on_screen()
+
+    def _center_on_screen(self):
+        from PyQt6.QtWidgets import QApplication
+        screen = QApplication.primaryScreen()
+        if screen:
+            geo = screen.availableGeometry()
+            x = (geo.width() - self.width()) // 2 + geo.x()
+            y = (geo.height() - self.height()) // 3 + geo.y()
+            self.move(x, y)
+
     def _on_save(self):
-        key = self._input.text().strip()
+        key = self._key_input.text().strip()
+        proxy = self._proxy_input.text().strip()
         if key:
             set_api_key(key)
-            self.accept()
+        if proxy:
+            set_proxy(proxy)
+        elif proxy == "" and get_proxy():
+            set_proxy("")  # 清空
+        self.accept()
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Return or event.key() == Qt.Key.Key_Enter:

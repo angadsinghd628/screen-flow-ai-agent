@@ -23,7 +23,7 @@ from PyQt6.QtCore import Qt, QObject, pyqtSignal, QTimer, QThread, QRect
 from PyQt6.QtGui import QImage, QIcon, QAction
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 
-import keyboard
+from pynput import keyboard as pynput_keyboard
 from langchain_core.messages import BaseMessage, AIMessage
 
 from config import DEFAULT_HOTKEY, TOGGLE_HOTKEY, CONTEXT_FILE, MAX_MESSAGES, HTTP_PROXY
@@ -206,7 +206,8 @@ class ScreenAIAgent(QObject):
         print("[AIRAG] 正在退出...")
         save_context(self._messages, CONTEXT_FILE)
         try:
-            keyboard.unhook_all()
+            if hasattr(self, '_hotkey_listener') and self._hotkey_listener:
+                self._hotkey_listener.stop()
         except Exception:
             pass
         self._tray.hide()
@@ -217,34 +218,39 @@ class ScreenAIAgent(QObject):
     # ============================================================
 
     def _register_hotkey(self):
-        """注册全局快捷键 Ctrl+D（截图）和 Ctrl+H（显隐）。"""
+        """注册全局快捷键 Ctrl+D（截图）和 Ctrl+F（显隐）— 跨平台 pynput。"""
         try:
-            keyboard.add_hotkey(DEFAULT_HOTKEY, self._on_hotkey_triggered)
-            keyboard.add_hotkey(TOGGLE_HOTKEY, self._on_hotkey_toggle)
+            # pynput 热键映射：<ctrl>+d, <ctrl>+f
+            hotkeys = {
+                '<ctrl>+d': self._on_hotkey_triggered,
+                '<ctrl>+f': self._on_hotkey_toggle,
+            }
+            self._hotkey_listener = pynput_keyboard.GlobalHotKeys(hotkeys)
+            self._hotkey_listener.start()  # 非阻塞，后台线程运行
             self._hotkey_registered = True
-            print(f"[AIRAG] [OK] 快捷键注册成功")
-            print(f"         {DEFAULT_HOTKEY.upper()} — 截图发送")
-            print(f"         {TOGGLE_HOTKEY.upper()} — 隐藏/显示窗口")
+            print(f"[AIRAG] [OK] 快捷键注册成功 (pynput)")
+            print(f"         Ctrl+D — 截图发送")
+            print(f"         Ctrl+F — 隐藏/显示窗口")
         except Exception as e:
             self._hotkey_registered = False
+            self._hotkey_listener = None
             print(f"[AIRAG] [WARN] 快捷键注册失败: {e}")
-            print(f"         请以【管理员权限】重新运行本程序。")
+            print(f"         pynput 在 Linux 上通常无需管理员权限。")
             print(f"         你也可以通过系统托盘的右键菜单手动截图。")
-            # 更新托盘提示
             self._tray.setToolTip(
-                "AIRAG 截图助手\n⚠ 热键未注册（需管理员权限）\n右键托盘图标手动截图"
+                "AIRAG 截图助手\n⚠ 热键未注册\n右键托盘图标手动截图"
             )
 
-    def _on_hotkey_triggered(self):
+    def _on_hotkey_triggered(self, key=None):
         """
-        Ctrl+D 回调 — 在 keyboard 库的后台线程中运行。
+        Ctrl+D 回调 — 在 pynput 后台线程中运行。
         QTimer.singleShot(0, ...) 安全切回主线程。
         """
         QTimer.singleShot(0, self._start_capture_flow)
 
-    def _on_hotkey_toggle(self):
+    def _on_hotkey_toggle(self, key=None):
         """
-        Ctrl+H 回调 — 切换 ResultWindow 显隐。
+        Ctrl+F 回调 — 切换 ResultWindow 显隐。
         """
         QTimer.singleShot(0, self._toggle_window)
 
@@ -481,7 +487,8 @@ def main():
         sys.exit(app.exec())
     finally:
         try:
-            keyboard.unhook_all()
+            if hasattr(agent, '_hotkey_listener') and agent._hotkey_listener:
+                agent._hotkey_listener.stop()
         except Exception:
             pass
         print("[AIRAG] 已退出。")

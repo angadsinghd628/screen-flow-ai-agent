@@ -67,3 +67,16 @@ def set_model(model: str) -> None:
     config = load_config()
     config["model"] = model
     save_config(config)
+
+
+def get_proxy() -> str:
+    """获取保存的代理地址，没有则返回空字符串。"""
+    config = load_config()
+    return config.get("proxy", "")
+
+
+def set_proxy(proxy: str) -> None:
+    """保存代理地址。"""
+    config = load_config()
+    config["proxy"] = proxy
+    save_config(config)
