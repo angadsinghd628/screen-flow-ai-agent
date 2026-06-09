@@ -1,0 +1,6 @@
+pyqt6>=6.6.0
+langgraph>=0.2.0
+langchain-core>=0.2.0
+volcenginesdkarkruntime
+keyboard>=0.13.5
+pillow>=10.0.0
