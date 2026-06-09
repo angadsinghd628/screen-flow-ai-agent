@@ -16,6 +16,17 @@ EXCLUDES = [
     'google', 'grpc', 'prometheus', 'opentelemetry',
     'pytest', 'black', 'isort', 'flake8', 'mypy', 'pylint',
     'coverage', 'Cython',
+    # 大型/无关包 — 防止 Anaconda 环境拉入
+    'jaxlib', 'jax', 'paddle', 'cv2', 'opencv',
+    'bokeh', 'pyarrow', 'llvmlite', 'transformers',
+    'pymupdf', 'selenium', 'sklearn', 'scikit', 'jieba',
+    'googleapiclient', 'polars', 'numba',
+    'rasterio', 'pyogrio', 'shapely', 'geopandas', 'fiona',
+    'tensorflow_text', 'tensorflow_hub', 'tflite',
+    'mmengine', 'mmcv', 'mmdet',
+    'litellm', 'langchain', 'langchain_community', 'tqdm',
+    'paddleocr', 'paddlepaddle', 'rich',
+    'aiohttp', 'aiosignal', 'frozenlist', 'yarl', 'multidict',
 ]
 
 HIDDEN_IMPORTS = [
