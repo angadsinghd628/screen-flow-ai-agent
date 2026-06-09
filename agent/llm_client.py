@@ -113,14 +113,16 @@ class ChatDoubaoVL(BaseChatModel):
             temperature=self.temperature,
         )
 
-        # 从 Response 对象中提取输出文本
+        # 从 Response 对象中提取输出文本（跳过 reasoning 等无 content 的 item）
         text = ""
         if hasattr(response, "output") and response.output:
             for item in response.output:
-                if hasattr(item, "content") and item.content:
-                    for part in item.content:
-                        if hasattr(part, "text") and part.text:
-                            text += part.text
+                # 跳过 ResponseReasoningItem 等无 content 属性的 item
+                if not hasattr(item, "content") or not item.content:
+                    continue
+                for part in item.content:
+                    if hasattr(part, "text") and part.text:
+                        text += part.text
 
         message = AIMessage(content=text)
         generation = ChatGeneration(message=message)
