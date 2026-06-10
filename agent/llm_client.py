@@ -271,13 +271,15 @@ def create_llm(streaming: bool = False) -> ChatDoubaoVL:
     return ChatDoubaoVL()
 
 
-def build_multimodal_message(text: str, image_base64: str) -> HumanMessage:
+def build_multimodal_message(text: str, image_base64: str = "",
+                             image_base64_list: Optional[List[str]] = None) -> HumanMessage:
     """
-    构建包含文本和图片的多模态 HumanMessage（LangChain 格式）。
+    构建包含文本和多张图片的多模态 HumanMessage（LangChain 格式）。
 
     Args:
         text: 用户输入的文本提示词（可为空字符串）。
-        image_base64: 图片 Base64 编码（不含 data URI 前缀）。
+        image_base64: 单张图片 Base64（向后兼容，优先用 image_base64_list）。
+        image_base64_list: 多张图片 Base64 列表。
 
     Returns:
         包含多模态内容列表的 HumanMessage。
@@ -290,18 +292,24 @@ def build_multimodal_message(text: str, image_base64: str) -> HumanMessage:
             "text": text.strip(),
         })
 
-    if image_base64:
-        content.append({
-            "type": "image_url",
-            "image_url": {
-                "url": f"data:image/jpeg;base64,{image_base64}",
-            },
-        })
+    # 收集所有图片：优先用列表
+    images = image_base64_list or []
+    if not images and image_base64:
+        images = [image_base64]
+
+    for b64 in images:
+        if b64:
+            content.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/jpeg;base64,{b64}",
+                },
+            })
 
     if not content:
         content.append({
             "type": "text",
-            "text": "请描述这张图片的内容。",
+            "text": "请描述图片内容。",
         })
 
     return HumanMessage(content=content)

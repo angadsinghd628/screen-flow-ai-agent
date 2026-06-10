@@ -20,7 +20,7 @@ import traceback
 from typing import Optional, List
 
 from PyQt6.QtCore import Qt, QObject, pyqtSignal, QTimer, QThread, QRect
-from PyQt6.QtGui import QImage, QIcon, QAction
+from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 
 from pynput import keyboard as pynput_keyboard
@@ -47,13 +47,13 @@ class StreamWorker(QThread):
     stream_error = pyqtSignal(str)
 
     def __init__(self, graph, messages: List[BaseMessage],
-                 user_text: str, image_base64: Optional[str],
+                 user_text: str, image_base64_list: Optional[List[str]],
                  max_turns: int, parent=None):
         super().__init__(parent)
         self._graph = graph
         self._messages = messages
         self._user_text = user_text
-        self._image_base64 = image_base64
+        self._image_base64_list = image_base64_list or []
         self._max_turns = max_turns
 
     def run(self):
@@ -66,7 +66,7 @@ class StreamWorker(QThread):
                     graph=self._graph,
                     messages=self._messages,
                     user_text=self._user_text,
-                    image_base64=self._image_base64,
+                    image_base64_list=self._image_base64_list,
                     max_turns=self._max_turns,
                 ):
                     self.token_received.emit(token)
@@ -110,7 +110,7 @@ class ScreenAIAgent(QObject):
 
         # 本轮输入追踪
         self._last_user_text = ""
-        self._last_image_b64: Optional[str] = None
+        self._last_image_b64_list: List[str] = []
         self._last_capture_rect: Optional[QRect] = None
 
         # 系统托盘
@@ -276,52 +276,70 @@ class ScreenAIAgent(QObject):
         self._capture_win.captured.connect(self._on_image_captured)
         self._capture_win.showFullScreen()
 
-    def _on_image_captured(self, image: QImage, capture_rect: QRect = None):
-        """截图完成 → 弹出追问输入框（预填已有文本）→ AI 处理。"""
+    def _on_image_captured(self, images: list):
+        """多框截图完成 → 弹出追问输入框（含缩略图）→ AI 处理。"""
         self._capture_win = None
-        self._last_capture_rect = capture_rect
 
-        # QImage → PIL → 压缩 → Base64
-        pil_img = qimage_to_pil(image)
-        pil_img = compress_image(pil_img)
-        image_base64 = pil_to_base64(pil_img)
+        if not images:
+            return  # 没截到任何图
 
-        # 弹出输入对话框，预填当前输入框文本
+        # 取第一个截图的矩形用于定位结果窗口
+        _, first_rect = images[0]
+        self._last_capture_rect = first_rect
+
+        # 每张图压缩 → Base64
+        image_base64_list = []
+        for img, _ in images:
+            pil_img = qimage_to_pil(img)
+            pil_img = compress_image(pil_img)
+            image_base64_list.append(pil_to_base64(pil_img))
+
+        # 弹出输入对话框，预填文本 + 显示缩略图
         existing_text = self._result_window.get_input_text()
         input_dlg = InputDialog()
         if existing_text:
             input_dlg.set_text(existing_text)
+        # 传入缩略图
+        input_dlg.add_thumbnails([img for img, _ in images])
 
         if input_dlg.exec() == InputDialog.DialogCode.Accepted:
             user_text = input_dlg.get_text()
-            # 用户确认后清空常驻输入框
             self._result_window.clear_input()
         else:
-            # 用户取消（Escape），不发送
-            return
+            return  # 用户取消
 
         self._last_user_text = user_text
-        self._last_image_b64 = image_base64
+        self._last_image_b64_list = image_base64_list
 
         # 进入 AI 处理
-        self._run_ai_stream(user_text, image_base64)
+        self._run_ai_stream(user_text, image_base64_list)
 
     # ============================================================
     # Step 2: AI Stream
     # ============================================================
 
-    def _run_ai_stream(self, user_text: str, image_base64: Optional[str] = None):
-        """启动 AI 流式处理。不清空历史，在已有内容上追加新的问答。"""
+    def _run_ai_stream(self, user_text: str, image_base64_list: Optional[List[str]] = None):
+        """启动 AI 流式处理。支持多图列表。"""
+        if image_base64_list is None:
+            image_base64_list = []
+
+        has_image = len(image_base64_list) > 0
 
         # 只有新截图时才重新定位窗口
-        if image_base64 and self._last_capture_rect and not self._last_capture_rect.isEmpty():
+        if has_image and self._last_capture_rect and not self._last_capture_rect.isEmpty():
             self._result_window.position_near_rect(self._last_capture_rect)
-        elif image_base64:
+        elif has_image:
             self._result_window._position_bottom_right()
 
-        # 在已有内容后追加用户问题标题（不清空历史）
+        # 在已有内容后追加用户问题标题
         if user_text.strip():
-            icon = "🖼️" if image_base64 else "💬"
+            img_count = len(image_base64_list)
+            if img_count > 1:
+                icon = f"🖼️×{img_count}"
+            elif img_count == 1:
+                icon = "🖼️"
+            else:
+                icon = "💬"
             existing = self._result_window.get_content()
             separator = "\n\n---\n\n" if existing.strip() else ""
             self._result_window.set_content(
@@ -337,7 +355,7 @@ class ScreenAIAgent(QObject):
             graph=self._graph,
             messages=list(self._messages),
             user_text=user_text,
-            image_base64=image_base64,
+            image_base64_list=image_base64_list,
             max_turns=10,
         )
         self._stream_worker.token_received.connect(self._on_token_received)
@@ -354,8 +372,8 @@ class ScreenAIAgent(QObject):
         if not text.strip():
             return
         self._last_user_text = text
-        self._last_image_b64 = None  # 追问不带新图片
-        self._run_ai_stream(text, image_base64=None)
+        self._last_image_b64_list = []
+        self._run_ai_stream(text, image_base64_list=[])
 
     def _on_stream_finished(self):
         full_response = ""
@@ -365,11 +383,11 @@ class ScreenAIAgent(QObject):
 
         print(f"[AIRAG] 流式输出完成 ({len(full_response)} 字符)")
 
-        # 保存上下文
-        if self._last_user_text or self._last_image_b64:
+        # 保存上下文（支持多图）
+        if self._last_user_text or self._last_image_b64_list:
             user_msg = build_multimodal_message(
                 self._last_user_text or "请描述图片内容",
-                self._last_image_b64 or "",
+                image_base64_list=self._last_image_b64_list,
             )
             self._messages.append(user_msg)
 
@@ -384,7 +402,7 @@ class ScreenAIAgent(QObject):
         print(f"[AIRAG] 上下文已保存 ({len(self._messages)} 条消息)")
 
         self._stream_worker = None
-        self._last_image_b64 = None
+        self._last_image_b64_list = []
 
     def _on_stream_error(self, error_msg: str):
         print(f"[AIRAG] 流式错误: {error_msg}")

@@ -92,7 +92,7 @@ async def stream_graph(
     graph: StateGraph,
     messages: List[BaseMessage],
     user_text: str,
-    image_base64: Optional[str],
+    image_base64_list: Optional[List[str]] = None,
     max_turns: int = 10,
 ) -> AsyncIterator[str]:
     """
@@ -102,15 +102,15 @@ async def stream_graph(
         graph: 编译好的 LangGraph（保留，用于未来扩）
         messages: 已有的对话历史
         user_text: 本轮用户文本
-        image_base64: 本轮截图的 base64，None 表示纯文本
+        image_base64_list: 本轮截图的 base64 列表，None/空 表示纯文本
         max_turns: 最大保留轮数
 
     Yields:
         逐 token 文本片段。
     """
-    # 1. 构建本轮输入消息
-    if image_base64:
-        input_msg = build_multimodal_message(user_text, image_base64)
+    # 1. 构建本轮输入消息（支持多图）
+    if image_base64_list:
+        input_msg = build_multimodal_message(user_text, image_base64_list=image_base64_list)
     elif user_text and user_text.strip():
         input_msg = build_text_message(user_text)
     else:
