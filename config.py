@@ -10,6 +10,7 @@ from utils.api_key_manager import get_api_key, get_model, get_proxy
 # ============================================================
 DEFAULT_HOTKEY = "ctrl+d"
 TOGGLE_HOTKEY = "ctrl+f"
+OCR_HOTKEY = "ctrl+r"
 
 # ============================================================
 # 网络代理（访问火山引擎 API 需要）

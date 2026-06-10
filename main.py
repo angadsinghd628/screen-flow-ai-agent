@@ -26,9 +26,10 @@ from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from pynput import keyboard as pynput_keyboard
 from langchain_core.messages import BaseMessage, AIMessage
 
-from config import DEFAULT_HOTKEY, TOGGLE_HOTKEY, CONTEXT_FILE, MAX_MESSAGES, HTTP_PROXY
+from config import DEFAULT_HOTKEY, TOGGLE_HOTKEY, OCR_HOTKEY, CONTEXT_FILE, MAX_MESSAGES, HTTP_PROXY
 from utils.image_tool import qimage_to_pil, pil_to_base64, compress_image
 from utils.context_store import load_context, save_context
+from utils.ocr_tool import ocr_recognize_batch
 from utils.api_key_manager import get_api_key, set_api_key, set_model
 from agent.graph import build_graph, stream_graph
 from agent.llm_client import build_multimodal_message
@@ -224,6 +225,7 @@ class ScreenAIAgent(QObject):
             hotkeys = {
                 '<ctrl>+d': self._on_hotkey_triggered,
                 '<ctrl>+f': self._on_hotkey_toggle,
+                '<ctrl>+r': self._on_ocr_hotkey,
             }
             self._hotkey_listener = pynput_keyboard.GlobalHotKeys(
                 hotkeys, suppress=False)  # suppress=False 让 Ctrl+Z 等正常传递
@@ -231,6 +233,7 @@ class ScreenAIAgent(QObject):
             self._hotkey_registered = True
             print(f"[AIRAG] [OK] 快捷键注册成功 (pynput)")
             print(f"         Ctrl+D — 截图发送")
+            print(f"         Ctrl+R — OCR 文字识别")
             print(f"         Ctrl+F — 隐藏/显示窗口")
         except Exception as e:
             self._hotkey_registered = False
@@ -262,6 +265,58 @@ class ScreenAIAgent(QObject):
         else:
             self._result_window.show()
             self._result_window.raise_()
+
+    def _on_ocr_hotkey(self, key=None):
+        """Ctrl+R 回调 — 启动 OCR 截图模式。"""
+        QTimer.singleShot(0, self._start_ocr_flow)
+
+    def _start_ocr_flow(self):
+        """打开截图遮罩，OCR 模式。"""
+        if self._capture_win is not None and self._capture_win.isVisible():
+            return
+        self._capture_win = CaptureWindow()
+        self._capture_win.captured.connect(self._on_ocr_captured)
+        self._capture_win.showFullScreen()
+
+    def _on_ocr_captured(self, images: list):
+        """OCR 截图完成 → 本地识别 → 显示可复制文本。"""
+        self._capture_win = None
+
+        if not images:
+            return
+
+        # 准备 PIL 图片列表
+        pil_images = []
+        for img, _ in images:
+            pil_images.append(qimage_to_pil(img))
+
+        # 显示加载提示
+        existing = self._result_window.get_content()
+        self._result_window.set_content(
+            existing + "\n\n---\n\n**🔍 OCR 识别中...**\n\n" if existing.strip()
+            else "**🔍 OCR 识别中...**\n\n"
+        )
+        self._result_window.show()
+        self._result_window.raise_()
+
+        # 主线程中运行 OCR（PaddleOCR 首次加载较慢）
+        QApplication.processEvents()
+
+        try:
+            ocr_text = ocr_recognize_batch(pil_images)
+        except Exception as e:
+            ocr_text = f"❌ OCR 识别失败: {e}"
+
+        # 替换"识别中"为实际结果
+        if existing.strip():
+            self._result_window.set_content(
+                existing + "\n\n---\n\n**🔍 OCR 结果：**\n\n" + ocr_text
+            )
+        else:
+            self._result_window.set_content("**🔍 OCR 结果：**\n\n" + ocr_text)
+
+        self._result_window.show()
+        self._result_window.raise_()
 
     # ============================================================
     # Step 1: Capture
