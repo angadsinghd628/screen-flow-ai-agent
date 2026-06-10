@@ -29,7 +29,7 @@ from langchain_core.messages import BaseMessage, AIMessage
 from config import DEFAULT_HOTKEY, TOGGLE_HOTKEY, CONTEXT_FILE, MAX_MESSAGES, HTTP_PROXY
 from utils.image_tool import qimage_to_pil, pil_to_base64, compress_image
 from utils.context_store import load_context, save_context
-from utils.api_key_manager import get_api_key, set_api_key
+from utils.api_key_manager import get_api_key, set_api_key, set_model
 from agent.graph import build_graph, stream_graph
 from agent.llm_client import build_multimodal_message
 from gui.capture_window import CaptureWindow
@@ -103,6 +103,7 @@ class ScreenAIAgent(QObject):
         # UI 组件 — ResultWindow 常驻显示
         self._result_window = ResultWindow()
         self._result_window.follow_up_requested.connect(self._on_follow_up)
+        self._result_window.model_changed.connect(self._on_model_changed)
         self._result_window.show()
         self._stream_worker: Optional[StreamWorker] = None
         self._capture_win: Optional[CaptureWindow] = None
@@ -351,6 +352,13 @@ class ScreenAIAgent(QObject):
     def _on_token_received(self, token: str):
         if self._result_window:
             self._result_window.append_text(token)
+
+    def _on_model_changed(self, model_name: str):
+        """用户切换模型 — 保存到配置并更新运行时。"""
+        set_model(model_name)
+        import config
+        config.DOUBAO_MODEL_NAME = model_name
+        print(f"[AIRAG] 模型已切换: {model_name}")
 
     def _on_follow_up(self, text: str):
         """用户点击发送 — 收集所有待发送图片 + 文字一起提交 AI。"""

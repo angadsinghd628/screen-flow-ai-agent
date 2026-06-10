@@ -22,7 +22,7 @@ def get_config_dir() -> str:
 CONFIG_DIR = get_config_dir()
 CONFIG_FILE = os.path.join(CONFIG_DIR, "airag_config.json")
 
-DEFAULT_MODEL = "doubao-seed-2-0-lite-260428"
+DEFAULT_MODEL = "doubao-seed-2-0-mini-260428"
 
 
 def load_config() -> dict:

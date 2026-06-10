@@ -16,7 +16,7 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QTextEdit, QHBoxLayout,
-    QPushButton, QLabel, QMenu, QLineEdit,
+    QPushButton, QLabel, QMenu, QLineEdit, QComboBox,
 )
 
 from config import (
@@ -36,8 +36,9 @@ class ResultWindow(QWidget):
     透明、可拖动、可缩放、置顶的悬浮结果窗。
     底部带有追问输入框 + 待发送图片缩略图，支持连续纯文本追问。
     """
-    # 信号：用户在追问框输入文字并发送
+    # 信号：用户在追问框输入文字并发送 / 切换模型
     follow_up_requested = pyqtSignal(str)
+    model_changed = pyqtSignal(str)  # 模型名
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -202,6 +203,30 @@ class ResultWindow(QWidget):
         """)
         self._ask_input.returnPressed.connect(self._send_follow_up)
         ask_layout.addWidget(self._ask_input, stretch=1)
+
+        # ---- 模型选择器 ----
+        from config import MODEL_OPTIONS, MODEL_OPTIONS_DEFAULT, DOUBAO_MODEL_NAME
+        self._model_combo = QComboBox()
+        self._model_combo.setFixedWidth(110)
+        self._model_combo.setStyleSheet("""
+            QComboBox {
+                background: #2a2a35; color: #aaccff; border: 1px solid #4a4a55;
+                border-radius: 5px; padding: 4px 8px; font-size: 10px;
+            }
+            QComboBox:hover { border-color: #6a8af4; }
+            QComboBox::drop-down { border: none; }
+            QComboBox QAbstractItemView {
+                background: #2a2a35; color: #ccc; selection-background-color: #3a5a8c;
+                border: 1px solid #555;
+            }
+        """)
+        for label, model_id in MODEL_OPTIONS.items():
+            self._model_combo.addItem(label, model_id)
+            # 选中当前模型
+            if model_id == DOUBAO_MODEL_NAME:
+                self._model_combo.setCurrentIndex(self._model_combo.count() - 1)
+        self._model_combo.currentIndexChanged.connect(self._on_model_changed)
+        ask_layout.addWidget(self._model_combo)
 
         send_btn = QPushButton("发送")
         send_btn.setStyleSheet("""
@@ -459,9 +484,23 @@ class ResultWindow(QWidget):
     def _send_follow_up(self):
         """用户按 Enter 或点击发送按钮时触发。"""
         text = self._ask_input.text().strip()
-        if text:
+        # 有文字或有待发送图片都可发送
+        if text or self._pending_images:
             self._ask_input.clear()
             self.follow_up_requested.emit(text)
+
+    def _on_model_changed(self, index):
+        """模型下拉框切换时触发。"""
+        model_id = self._model_combo.currentData()
+        if model_id:
+            self.model_changed.emit(model_id)
+
+    def set_current_model(self, model_name: str):
+        """外部设置当前选中的模型（启动时同步）。"""
+        for i in range(self._model_combo.count()):
+            if self._model_combo.itemData(i) == model_name:
+                self._model_combo.setCurrentIndex(i)
+                break
 
     # ============================================================
     # Markdown → HTML

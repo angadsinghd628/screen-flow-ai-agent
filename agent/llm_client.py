@@ -107,8 +107,10 @@ class ChatDoubaoVL(BaseChatModel):
         """非流式调用 Ark responses.create。"""
         ark_input = self._convert_messages_to_ark(messages)
 
+        # 动态读取当前模型（支持运行时切换）
+        from config import DOUBAO_MODEL_NAME
         response = self._client.responses.create(
-            model=self.model_name,
+            model=DOUBAO_MODEL_NAME,
             input=ark_input,
             temperature=self.temperature,
         )
@@ -142,8 +144,10 @@ class ChatDoubaoVL(BaseChatModel):
         """流式调用 Ark responses.create(stream=True)。"""
         ark_input = self._convert_messages_to_ark(messages)
 
+        # 动态读取当前模型（支持运行时切换）
+        from config import DOUBAO_MODEL_NAME
         stream = self._client.responses.create(
-            model=self.model_name,
+            model=DOUBAO_MODEL_NAME,
             input=ark_input,
             temperature=self.temperature,
             stream=True,
