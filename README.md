@@ -39,9 +39,11 @@
 
 ### 截图 → 连续多框 → 缩略图累积
 
-<img src="assets/user.png" alt="截图选区" width="700">
+<img src="assets/user3.png" alt="连续框选" width="700">
 
-> `Ctrl+D` 进入截图，拖拽画框松手自动确认，可连续画多个框。
+> `Ctrl+D` 进入截图，拖拽画框松手自动确认变绿标号，可连续画多个框。`Ctrl+Z` 撤销上一个。
+
+<img src="assets/user.png" alt="截图选区" width="700">
 
 <img src="assets/user1.png" alt="输入追问" width="700">
 
@@ -87,10 +89,11 @@ cd screen-flow-ai-agent
 pip install -r requirements.txt
 ```
 
-额外安装火山引擎 SDK（联系作者或从火山引擎获取）：
+额外安装火山引擎 SDK：
 ```bash
 pip install volcenginesdkarkruntime
 ```
+> 如 pip 安装失败，可从火山引擎方舟控制台下载 SDK 或联系作者获取。
 
 ### 2. 配置凭证
 
@@ -98,9 +101,9 @@ pip install volcenginesdkarkruntime
 
 | 配置项 | 说明 | 获取地址 |
 |--------|------|----------|
-| API Key | 豆包方舟 API Key | https://console.volcengine.com/ark |
+| API Key | 豆包方舟 API Key | [console.volcengine.com/ark/region:ark+cn-beijing/apiKey](https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey) |
 | 代理地址 | HTTP 代理（如需） | 如 `http://127.0.0.1:7897` |
-| SecretId/Key | 腾讯云 OCR 凭证 | https://console.cloud.tencent.com/cam/capi |
+| SecretId/Key | 腾讯云 OCR 凭证 | [console.cloud.tencent.com/cam/capi](https://console.cloud.tencent.com/cam/capi) |
 
 > OCR 凭证可选填，不填则 Ctrl+R 不可用，不影响截图 + AI 功能。
 
@@ -146,6 +149,11 @@ Ai_Flow/
 │   └── ocr_tool.py         # 腾讯云 OCR 封装
 │
 └── assets/                 # 图标和截图
+    ├── logo.png            # 应用图标
+    ├── user.png            # 截图选区
+    ├── user1.png           # 追问输入
+    ├── user2.png           # 结果展示
+    └── user3.png           # 连续多框
 ```
 
 ---
