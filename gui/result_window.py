@@ -36,9 +36,10 @@ class ResultWindow(QWidget):
     透明、可拖动、可缩放、置顶的悬浮结果窗。
     底部带有追问输入框 + 待发送图片缩略图，支持连续纯文本追问。
     """
-    # 信号：用户在追问框输入文字并发送 / 切换模型
+    # 信号：用户在追问框输入文字并发送 / 切换模型 / 打开设置
     follow_up_requested = pyqtSignal(str)
-    model_changed = pyqtSignal(str)  # 模型名
+    model_changed = pyqtSignal(str)
+    settings_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -231,6 +232,20 @@ class ResultWindow(QWidget):
                 self._model_combo.setCurrentIndex(self._model_combo.count() - 1)
         self._model_combo.currentIndexChanged.connect(self._on_model_changed)
         ask_layout.addWidget(self._model_combo)
+
+        # 设置按钮
+        settings_btn = QPushButton("⚙")
+        settings_btn.setFixedWidth(30)
+        settings_btn.setToolTip("设置 API Key / OCR 凭证")
+        settings_btn.setStyleSheet("""
+            QPushButton {
+                background: #3a3a40; color: #aaa; border: 1px solid #555;
+                border-radius: 5px; padding: 4px 0; font-size: 14px;
+            }
+            QPushButton:hover { background: #555; color: #fff; }
+        """)
+        settings_btn.clicked.connect(self._open_settings)
+        ask_layout.addWidget(settings_btn)
 
         send_btn = QPushButton("发送")
         send_btn.setStyleSheet("""
@@ -498,6 +513,10 @@ class ResultWindow(QWidget):
         model_id = self._model_combo.currentData()
         if model_id:
             self.model_changed.emit(model_id)
+
+    def _open_settings(self):
+        """点击设置按钮 → 发射信号由 main.py 处理。"""
+        self.settings_requested.emit()
 
     def set_current_model(self, model_name: str):
         """外部设置当前选中的模型（启动时同步）。"""

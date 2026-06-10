@@ -30,7 +30,7 @@ from config import DEFAULT_HOTKEY, TOGGLE_HOTKEY, OCR_HOTKEY, CONTEXT_FILE, MAX_
 from utils.image_tool import qimage_to_pil, pil_to_base64, compress_image
 from utils.context_store import load_context, save_context
 from utils.ocr_tool import ocr_recognize_batch
-from utils.api_key_manager import get_api_key, set_api_key, set_model
+from utils.api_key_manager import get_api_key, set_api_key, set_model, get_model, get_proxy
 from agent.graph import build_graph, stream_graph
 from agent.llm_client import build_multimodal_message
 from gui.capture_window import CaptureWindow
@@ -105,6 +105,7 @@ class ScreenAIAgent(QObject):
         self._result_window = ResultWindow()
         self._result_window.follow_up_requested.connect(self._on_follow_up)
         self._result_window.model_changed.connect(self._on_model_changed)
+        self._result_window.settings_requested.connect(self._change_api_key)
         self._result_window.show()
         self._stream_worker: Optional[StreamWorker] = None
         self._capture_win: Optional[CaptureWindow] = None
@@ -499,17 +500,19 @@ class ScreenAIAgent(QObject):
             QTimer.singleShot(1000, self._change_api_key)
 
     def _change_api_key(self):
-        """弹出 API Key 设置弹窗。"""
+        """弹出设置弹窗（API Key + 代理 + OCR 凭证）。"""
         from gui.api_key_dialog import ApiKeyDialog
         dlg = ApiKeyDialog()
         if dlg.exec() == ApiKeyDialog.DialogCode.Accepted:
-            # 重新加载 config 中的 API Key
+            # 重新加载所有配置
             import config
             config.ARK_API_KEY = get_api_key()
-            print("[AIRAG] API Key 已更新")
+            config.HTTP_PROXY = get_proxy()
+            config.DOUBAO_MODEL_NAME = get_model()
+            print("[AIRAG] 设置已保存")
             self._tray.showMessage(
-                "AIRAG",
-                "API Key 已保存",
+                "Ai_Flow",
+                "设置已保存",
                 QSystemTrayIcon.MessageIcon.Information,
                 2000,
             )
