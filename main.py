@@ -20,7 +20,7 @@ import traceback
 from typing import Optional, List
 
 from PyQt6.QtCore import Qt, QObject, pyqtSignal, QTimer, QThread, QRect
-from PyQt6.QtGui import QImage, QIcon, QAction
+from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 
 from pynput import keyboard as pynput_keyboard
@@ -276,18 +276,23 @@ class ScreenAIAgent(QObject):
         self._capture_win.captured.connect(self._on_image_captured)
         self._capture_win.showFullScreen()
 
-    def _on_image_captured(self, image: QImage, capture_rect: QRect):
-        """截图完成 → 压缩存入 ResultWindow 缩略图区，等待用户发送。"""
+    def _on_image_captured(self, images: list):
+        """多框截图完成 → 全部压缩存入 ResultWindow 缩略图区。"""
         self._capture_win = None
-        self._last_capture_rect = capture_rect
 
-        # 压缩 → Base64
-        pil_img = qimage_to_pil(image)
-        pil_img = compress_image(pil_img)
-        image_base64 = pil_to_base64(pil_img)
+        if not images:
+            return
 
-        # 直接添加到结果窗口的待发送缩略图列表
-        self._result_window.add_image_thumbnail(image_base64, image)
+        # 用第一个截图的矩形定位窗口
+        _, first_rect = images[0]
+        self._last_capture_rect = first_rect
+
+        # 每张图压缩 → Base64 → 添加到缩略图
+        for img, _ in images:
+            pil_img = qimage_to_pil(img)
+            pil_img = compress_image(pil_img)
+            image_base64 = pil_to_base64(pil_img)
+            self._result_window.add_image_thumbnail(image_base64, img)
 
         # 窗口保持可见
         if not self._result_window.isVisible():
