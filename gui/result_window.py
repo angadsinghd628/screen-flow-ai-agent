@@ -145,6 +145,10 @@ class ResultWindow(QWidget):
         # ---- 内容显示区 ----
         self._text_view = QTextEdit()
         self._text_view.setReadOnly(True)
+        self._text_view.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse |
+            Qt.TextInteractionFlag.TextSelectableByKeyboard
+        )
         self._text_view.setFont(QFont("Microsoft YaHei", RESULT_FONT_SIZE))
         self._text_view.setStyleSheet("""
             QTextEdit {

@@ -23,10 +23,24 @@ class OCREngine:
             return
         print("[OCR] 正在加载 PaddleOCR 模型（首次较慢）...")
         from paddleocr import PaddleOCR
+
+        # 自动检测 GPU，没有则降级 CPU
+        try:
+            import paddle
+            gpu_available = paddle.is_compiled_with_cuda()
+        except Exception:
+            gpu_available = False
+
+        use_gpu = gpu_available
+        if use_gpu:
+            print("[OCR] 检测到 GPU，使用 GPU 加速")
+        else:
+            print("[OCR] 未检测到 GPU，使用 CPU（较慢但可用）")
+
         self._ocr = PaddleOCR(
             use_angle_cls=True,
             lang='ch',
-            use_gpu=False,
+            use_gpu=use_gpu,
             show_log=False,
         )
         self._initialized = True
