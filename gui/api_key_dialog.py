@@ -8,7 +8,11 @@ from PyQt6.QtWidgets import (
     QPushButton, QLabel,
 )
 
-from utils.api_key_manager import get_api_key, set_api_key, get_proxy, set_proxy
+from utils.api_key_manager import (
+    get_api_key, set_api_key, get_proxy, set_proxy,
+    get_tencent_secret_id, set_tencent_secret_id,
+    get_tencent_secret_key, set_tencent_secret_key,
+)
 
 
 class ApiKeyDialog(QDialog):
@@ -27,7 +31,7 @@ class ApiKeyDialog(QDialog):
 
     def _setup_ui(self):
         self.setWindowTitle("Ai_Flow - 设置")
-        self.setFixedSize(460, 290)
+        self.setFixedSize(480, 460)
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
@@ -95,6 +99,54 @@ class ApiKeyDialog(QDialog):
             self._proxy_input.setText(current_proxy)
         layout.addWidget(self._proxy_input)
 
+        # ---- 腾讯云 OCR 凭证 ----
+        ocr_label = QLabel("📷 腾讯云 OCR 凭证（Ctrl+R 文字识别，免费 1000 次/月）")
+        ocr_label.setFont(QFont("Microsoft YaHei", 10))
+        ocr_label.setStyleSheet("color: #aabbcc; margin-top: 6px;")
+        layout.addWidget(ocr_label)
+
+        sid_label = QLabel("SecretId")
+        sid_label.setFont(QFont("Microsoft YaHei", 9))
+        sid_label.setStyleSheet("color: #8899aa;")
+        layout.addWidget(sid_label)
+
+        current_sid = get_tencent_secret_id()
+        self._sid_input = QLineEdit()
+        self._sid_input.setPlaceholderText("腾讯云 SecretId")
+        self._sid_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self._sid_input.setFont(QFont("Consolas", 10))
+        self._sid_input.setStyleSheet("""
+            QLineEdit {
+                background-color: #1e1e28; color: #e0e0e0;
+                border: 1px solid #555; border-radius: 5px; padding: 6px 10px;
+            }
+            QLineEdit:focus { border-color: #4a8af4; }
+        """)
+        if current_sid:
+            self._sid_input.setText(current_sid)
+        layout.addWidget(self._sid_input)
+
+        skey_label = QLabel("SecretKey")
+        skey_label.setFont(QFont("Microsoft YaHei", 9))
+        skey_label.setStyleSheet("color: #8899aa;")
+        layout.addWidget(skey_label)
+
+        current_skey = get_tencent_secret_key()
+        self._skey_input = QLineEdit()
+        self._skey_input.setPlaceholderText("腾讯云 SecretKey")
+        self._skey_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self._skey_input.setFont(QFont("Consolas", 10))
+        self._skey_input.setStyleSheet("""
+            QLineEdit {
+                background-color: #1e1e28; color: #e0e0e0;
+                border: 1px solid #555; border-radius: 5px; padding: 6px 10px;
+            }
+            QLineEdit:focus { border-color: #4a8af4; }
+        """)
+        if current_skey:
+            self._skey_input.setText(current_skey)
+        layout.addWidget(self._skey_input)
+
         desc = QLabel("设置保存在程序目录下，下次启动自动加载。")
         desc.setFont(QFont("Microsoft YaHei", 9))
         desc.setStyleSheet("color: #667788;")
@@ -147,12 +199,19 @@ class ApiKeyDialog(QDialog):
     def _on_save(self):
         key = self._key_input.text().strip()
         proxy = self._proxy_input.text().strip()
+        sid = self._sid_input.text().strip()
+        skey = self._skey_input.text().strip()
+
         if key:
             set_api_key(key)
         if proxy:
             set_proxy(proxy)
         elif proxy == "" and get_proxy():
-            set_proxy("")  # 清空
+            set_proxy("")
+        if sid:
+            set_tencent_secret_id(sid)
+        if skey:
+            set_tencent_secret_key(skey)
         self.accept()
 
     def keyPressEvent(self, event):

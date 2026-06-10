@@ -80,3 +80,27 @@ def set_proxy(proxy: str) -> None:
     config = load_config()
     config["proxy"] = proxy
     save_config(config)
+
+
+def get_tencent_secret_id() -> str:
+    """获取腾讯云 SecretId。"""
+    return load_config().get("tencent_secret_id", "")
+
+
+def set_tencent_secret_id(sid: str) -> None:
+    """保存腾讯云 SecretId。"""
+    config = load_config()
+    config["tencent_secret_id"] = sid
+    save_config(config)
+
+
+def get_tencent_secret_key() -> str:
+    """获取腾讯云 SecretKey。"""
+    return load_config().get("tencent_secret_key", "")
+
+
+def set_tencent_secret_key(skey: str) -> None:
+    """保存腾讯云 SecretKey。"""
+    config = load_config()
+    config["tencent_secret_key"] = skey
+    save_config(config)

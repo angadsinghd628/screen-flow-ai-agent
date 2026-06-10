@@ -7,7 +7,6 @@ httpx
 six
 sniffio
 python-dateutil
-paddlepaddle
-paddleocr
+tencentcloud-sdk-python-ocr
 # 火山引擎 SDK — 见下方安装说明
 # volcenginesdkarkruntime  # 需从 https://pypi.org 或火山引擎官方获取

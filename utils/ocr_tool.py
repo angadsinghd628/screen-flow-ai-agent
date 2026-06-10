@@ -1,103 +1,73 @@
 """
-PaddleOCR 本地识别工具 — 支持中英文混合识别。
+腾讯云 OCR 文字识别工具 — 免费额度 1000 次/月。
 
-首次运行时 PaddleOCR 会自动下载模型文件到 ~/.paddleocr/。
+使用前需配置 SecretId 和 SecretKey（设置界面或 airag_config.json）。
 """
+import base64
+import io
 from typing import List, Optional
 from PIL import Image
 
 
-class OCREngine:
-    """PaddleOCR 封装，懒加载单例。"""
-
-    _instance: Optional["OCREngine"] = None
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def _init(self):
-        if self._initialized:
-            return
-        print("[OCR] 正在加载 PaddleOCR 模型（首次较慢）...")
-        # 关闭 PaddleOCR 的 debug 日志
-        import logging
-        logging.getLogger("ppocr").setLevel(logging.WARNING)
-        logging.getLogger("paddleocr").setLevel(logging.WARNING)
-        from paddleocr import PaddleOCR
-
-        # 自动检测 GPU，没有则降级 CPU
-        try:
-            import paddle
-            gpu_available = paddle.is_compiled_with_cuda()
-        except Exception:
-            gpu_available = False
-
-        use_gpu = gpu_available
-        if use_gpu:
-            print("[OCR] 检测到 GPU，使用 GPU 加速")
-        else:
-            print("[OCR] 未检测到 GPU，使用 CPU（较慢但可用）")
-
-        try:
-            self._ocr = PaddleOCR(
-                use_angle_cls=True,
-                lang='ch',
-                use_gpu=use_gpu,
-            )
-        except TypeError:
-            # 旧版 PaddleOCR 参数不同
-            self._ocr = PaddleOCR(use_angle_cls=True, lang='ch')
-        self._initialized = True
-        print("[OCR] PaddleOCR 模型加载完成")
-
-    def recognize(self, pil_image: Image.Image) -> str:
-        """识别单张 PIL 图片，返回文本字符串。"""
-        self._init()
-        import numpy as np
-
-        # PaddleOCR 需要 numpy array (RGB)
-        img_array = np.array(pil_image.convert("RGB"))
-
-        try:
-            results = self._ocr.ocr(img_array, cls=True)
-        except Exception as e:
-            return f"[OCR 识别失败] {e}"
-
-        if not results or not results[0]:
-            return "[OCR] 未识别到文字"
-
-        lines = []
-        for line_info in results[0]:
-            text = line_info[1][0]  # (bbox, (text, confidence))
-            confidence = line_info[1][1]
-            lines.append(f"{text}  ({confidence:.0%})")
-
-        return "\n".join(lines)
-
-    def recognize_batch(self, images: List[Image.Image]) -> str:
-        """批量识别多张图片，返回汇总文本。"""
-        if not images:
-            return ""
-
-        results = []
-        for i, img in enumerate(images, 1):
-            text = self.recognize(img)
-            if len(images) > 1:
-                results.append(f"## 截图 {i}\n{text}")
-            else:
-                results.append(text)
-
-        return "\n\n".join(results)
+def _get_credentials():
+    """从配置中读取腾讯云凭证。"""
+    from utils.api_key_manager import get_tencent_secret_id, get_tencent_secret_key
+    sid = get_tencent_secret_id()
+    skey = get_tencent_secret_key()
+    return sid, skey
 
 
 def ocr_recognize(pil_image: Image.Image) -> str:
-    """便捷函数：识别单张图片。"""
-    return OCREngine().recognize(pil_image)
+    """识别单张 PIL 图片，返回文本。"""
+    sid, skey = _get_credentials()
+    if not sid or not skey:
+        return "⚠️ 请先设置腾讯云 OCR 凭证（SecretId / SecretKey）\n右键托盘 → 设置"
+
+    try:
+        from tencentcloud.common import credential
+        from tencentcloud.ocr.v20181119 import ocr_client, models
+
+        # 图片转 Base64
+        buf = io.BytesIO()
+        pil_image.convert("RGB").save(buf, format="JPEG", quality=85)
+        img_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+
+        cred = credential.Credential(sid, skey)
+        client = ocr_client.OcrClient(cred, "ap-guangzhou")
+
+        req = models.GeneralBasicOCRRequest()
+        req.ImageBase64 = img_b64
+
+        resp = client.GeneralBasicOCR(req)
+
+        lines = []
+        for item in resp.TextDetections:
+            text = item.DetectedText
+            conf = item.Confidence / 100.0 if item.Confidence else 0
+            lines.append(f"{text}  ({conf:.0%})")
+
+        return "\n".join(lines) if lines else "[OCR] 未识别到文字"
+
+    except Exception as e:
+        err = str(e)
+        if "AuthFailure" in err or "InvalidParameterValue" in err:
+            return f"❌ 腾讯云凭证无效: {err}\n请检查 SecretId/SecretKey 是否正确"
+        if "RequestLimitExceeded" in err:
+            return "❌ 请求超限，免费额度 1000 次/月已用完"
+        return f"❌ OCR 请求失败: {err}"
 
 
 def ocr_recognize_batch(images: List[Image.Image]) -> str:
-    """便捷函数：批量识别多张图片。"""
-    return OCREngine().recognize_batch(images)
+    """批量识别多张图片，返回汇总文本。"""
+    if not images:
+        return ""
+
+    results = []
+    for i, img in enumerate(images, 1):
+        text = ocr_recognize(img)
+        if len(images) > 1:
+            results.append(f"## 截图 {i}\n{text}")
+        else:
+            results.append(text)
+
+    return "\n\n".join(results)
