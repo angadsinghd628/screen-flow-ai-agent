@@ -42,9 +42,7 @@ def ocr_recognize(pil_image: Image.Image) -> str:
 
         lines = []
         for item in resp.TextDetections:
-            text = item.DetectedText
-            conf = item.Confidence / 100.0 if item.Confidence else 0
-            lines.append(f"{text}  ({conf:.0%})")
+            lines.append(item.DetectedText)
 
         return "\n".join(lines) if lines else "[OCR] 未识别到文字"
 
