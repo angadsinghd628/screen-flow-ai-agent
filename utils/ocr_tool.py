@@ -22,6 +22,10 @@ class OCREngine:
         if self._initialized:
             return
         print("[OCR] 正在加载 PaddleOCR 模型（首次较慢）...")
+        # 关闭 PaddleOCR 的 debug 日志
+        import logging
+        logging.getLogger("ppocr").setLevel(logging.WARNING)
+        logging.getLogger("paddleocr").setLevel(logging.WARNING)
         from paddleocr import PaddleOCR
 
         # 自动检测 GPU，没有则降级 CPU
@@ -37,12 +41,15 @@ class OCREngine:
         else:
             print("[OCR] 未检测到 GPU，使用 CPU（较慢但可用）")
 
-        self._ocr = PaddleOCR(
-            use_angle_cls=True,
-            lang='ch',
-            use_gpu=use_gpu,
-            show_log=False,
-        )
+        try:
+            self._ocr = PaddleOCR(
+                use_angle_cls=True,
+                lang='ch',
+                use_gpu=use_gpu,
+            )
+        except TypeError:
+            # 旧版 PaddleOCR 参数不同
+            self._ocr = PaddleOCR(use_angle_cls=True, lang='ch')
         self._initialized = True
         print("[OCR] PaddleOCR 模型加载完成")
 
