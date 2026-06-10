@@ -353,13 +353,16 @@ class ScreenAIAgent(QObject):
             self._result_window.append_text(token)
 
     def _on_follow_up(self, text: str):
-        """用户点击发送 — 收集所有待发送图片一起提交。"""
-        if not text.strip() and not self._result_window.get_pending_images():
-            return
-        self._last_user_text = text
+        """用户点击发送 — 收集所有待发送图片 + 文字一起提交 AI。"""
         # 收集所有待发送图片
         self._last_image_b64_list = self._result_window.get_pending_images()
         self._result_window.clear_pending_images()
+
+        # 如果无文字也无图片，不发送
+        if not text.strip() and not self._last_image_b64_list:
+            return
+
+        self._last_user_text = text
         # 清空输入框
         self._result_window.clear_input()
         self._run_ai_stream(text, image_base64_list=self._last_image_b64_list)
