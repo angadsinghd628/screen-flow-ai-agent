@@ -20,7 +20,7 @@ import traceback
 from typing import Optional, List
 
 from PyQt6.QtCore import Qt, QObject, pyqtSignal, QTimer, QThread, QRect
-from PyQt6.QtGui import QIcon, QAction
+from PyQt6.QtGui import QImage, QIcon, QAction
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 
 from pynput import keyboard as pynput_keyboard
@@ -33,7 +33,6 @@ from utils.api_key_manager import get_api_key, set_api_key
 from agent.graph import build_graph, stream_graph
 from agent.llm_client import build_multimodal_message
 from gui.capture_window import CaptureWindow
-from gui.input_widget import InputDialog
 from gui.result_window import ResultWindow
 
 
@@ -277,43 +276,23 @@ class ScreenAIAgent(QObject):
         self._capture_win.captured.connect(self._on_image_captured)
         self._capture_win.showFullScreen()
 
-    def _on_image_captured(self, images: list):
-        """多框截图完成 → 弹出追问输入框（含缩略图）→ AI 处理。"""
+    def _on_image_captured(self, image: QImage, capture_rect: QRect):
+        """截图完成 → 压缩存入 ResultWindow 缩略图区，等待用户发送。"""
         self._capture_win = None
+        self._last_capture_rect = capture_rect
 
-        if not images:
-            return  # 没截到任何图
+        # 压缩 → Base64
+        pil_img = qimage_to_pil(image)
+        pil_img = compress_image(pil_img)
+        image_base64 = pil_to_base64(pil_img)
 
-        # 取第一个截图的矩形用于定位结果窗口
-        _, first_rect = images[0]
-        self._last_capture_rect = first_rect
+        # 直接添加到结果窗口的待发送缩略图列表
+        self._result_window.add_image_thumbnail(image_base64, image)
 
-        # 每张图压缩 → Base64
-        image_base64_list = []
-        for img, _ in images:
-            pil_img = qimage_to_pil(img)
-            pil_img = compress_image(pil_img)
-            image_base64_list.append(pil_to_base64(pil_img))
-
-        # 弹出输入对话框，预填文本 + 显示缩略图
-        existing_text = self._result_window.get_input_text()
-        input_dlg = InputDialog()
-        if existing_text:
-            input_dlg.set_text(existing_text)
-        # 传入缩略图
-        input_dlg.add_thumbnails([img for img, _ in images])
-
-        if input_dlg.exec() == InputDialog.DialogCode.Accepted:
-            user_text = input_dlg.get_text()
-            self._result_window.clear_input()
-        else:
-            return  # 用户取消
-
-        self._last_user_text = user_text
-        self._last_image_b64_list = image_base64_list
-
-        # 进入 AI 处理
-        self._run_ai_stream(user_text, image_base64_list)
+        # 窗口保持可见
+        if not self._result_window.isVisible():
+            self._result_window.show()
+        self._result_window.raise_()
 
     # ============================================================
     # Step 2: AI Stream
@@ -369,12 +348,16 @@ class ScreenAIAgent(QObject):
             self._result_window.append_text(token)
 
     def _on_follow_up(self, text: str):
-        """用户在结果窗口追问（纯文本，无新截图）。"""
-        if not text.strip():
+        """用户点击发送 — 收集所有待发送图片一起提交。"""
+        if not text.strip() and not self._result_window.get_pending_images():
             return
         self._last_user_text = text
-        self._last_image_b64_list = []
-        self._run_ai_stream(text, image_base64_list=[])
+        # 收集所有待发送图片
+        self._last_image_b64_list = self._result_window.get_pending_images()
+        self._result_window.clear_pending_images()
+        # 清空输入框
+        self._result_window.clear_input()
+        self._run_ai_stream(text, image_base64_list=self._last_image_b64_list)
 
     def _on_stream_finished(self):
         full_response = ""

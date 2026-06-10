@@ -11,8 +11,8 @@
 import re
 from PyQt6.QtCore import Qt, QPoint, QSize, QRect, QTimer, pyqtSignal
 from PyQt6.QtGui import (
-    QFont, QColor, QPalette, QAction,
-    QTextCursor, QMouseEvent, QCursor,
+    QFont, QColor, QPalette, QAction, QImage,
+    QTextCursor, QMouseEvent, QCursor, QPixmap,
 )
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QTextEdit, QHBoxLayout,
@@ -34,7 +34,7 @@ MIN_HEIGHT = 200
 class ResultWindow(QWidget):
     """
     透明、可拖动、可缩放、置顶的悬浮结果窗。
-    底部带有追问输入框，支持连续纯文本追问。
+    底部带有追问输入框 + 待发送图片缩略图，支持连续纯文本追问。
     """
     # 信号：用户在追问框输入文字并发送
     follow_up_requested = pyqtSignal(str)
@@ -42,6 +42,8 @@ class ResultWindow(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._buffer = ""
+        self._pending_images: list = []  # 待发送图片 (base64 列表)
+        self._thumb_widgets: list = []    # 缩略图 widget 列表
 
         # ---- 拖动/缩放状态 ----
         self._drag_pos = QPoint()          # 拖动起始偏移
@@ -155,6 +157,31 @@ class ResultWindow(QWidget):
         """)
         self._text_view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         layout.addWidget(self._text_view, stretch=1)
+
+        # ---- 待发送图片缩略图区 ----
+        from PyQt6.QtWidgets import QScrollArea, QSizePolicy
+
+        self._thumb_scroll = QScrollArea()
+        self._thumb_scroll.setFixedHeight(86)
+        self._thumb_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._thumb_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._thumb_scroll.setStyleSheet("""
+            QScrollArea { background: transparent; border: 1px solid #3a3a45; border-radius: 4px; }
+            QScrollBar:horizontal { height: 5px; background: #2a2a30; border-radius: 2px; }
+            QScrollBar::handle:horizontal { background: #555; border-radius: 2px; }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
+        """)
+        self._thumb_scroll.hide()
+
+        self._thumb_container = QWidget()
+        self._thumb_container.setStyleSheet("background: transparent;")
+        self._thumb_container_layout = QHBoxLayout(self._thumb_container)
+        self._thumb_container_layout.setContentsMargins(4, 4, 4, 4)
+        self._thumb_container_layout.setSpacing(4)
+        self._thumb_container_layout.addStretch()
+        self._thumb_scroll.setWidget(self._thumb_container)
+        self._thumb_scroll.setWidgetResizable(True)
+        layout.addWidget(self._thumb_scroll)
 
         # ---- 底部追问输入区 ----
         ask_layout = QHBoxLayout()
@@ -311,6 +338,123 @@ class ResultWindow(QWidget):
     def clear_input(self):
         """清空底部追问输入框。"""
         self._ask_input.clear()
+
+    # ---- 待发送图片缩略图 ----
+
+    def add_image_thumbnail(self, base64_data: str, qimage: QImage):
+        """添加一张截图缩略图到待发送列表。"""
+        self._pending_images.append(base64_data)
+
+        # 创建 70×52 缩略图
+        from PyQt6.QtWidgets import QLabel
+        pm = QPixmap.fromImage(qimage).scaled(
+            70, 52, Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation)
+
+        container = QWidget()
+        container.setFixedSize(82, 76)
+        container.setStyleSheet("background: #2a2a35; border-radius: 4px;")
+
+        vbox = QVBoxLayout(container)
+        vbox.setContentsMargins(3, 3, 3, 1)
+        vbox.setSpacing(1)
+
+        img_label = QLabel()
+        img_label.setPixmap(pm)
+        img_label.setFixedSize(70, 52)
+        img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        img_label.setStyleSheet("border: 1px solid #4a4a55; border-radius: 2px;")
+        vbox.addWidget(img_label, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        idx = len(self._thumb_widgets)
+        del_btn = QPushButton(f"✕ {idx + 1}")
+        del_btn.setFixedSize(50, 16)
+        del_btn.setStyleSheet("""
+            QPushButton { background: #c0392b; color: white; border: none;
+                border-radius: 2px; font-size: 9px; padding: 0; }
+            QPushButton:hover { background: #e74c3c; }
+        """)
+        del_btn.clicked.connect(lambda: self._remove_thumbnail(idx))
+        vbox.addWidget(del_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        # 插入到 stretch 之前
+        count = self._thumb_container_layout.count()
+        self._thumb_container_layout.insertWidget(count - 1, container)
+        self._thumb_widgets.append(container)
+
+        self._thumb_scroll.show()
+        # 调整窗口高度
+        self.resize(self.width(), self.height() + 1)
+        self.resize(self.width(), self.height() - 1)
+
+    def _remove_thumbnail(self, index: int):
+        """删除指定缩略图。"""
+        if 0 <= index < len(self._pending_images):
+            self._pending_images.pop(index)
+            w = self._thumb_widgets.pop(index)
+            self._thumb_container_layout.removeWidget(w)
+            w.deleteLater()
+            self._rebuild_thumbs()
+            if not self._pending_images:
+                self._thumb_scroll.hide()
+
+    def _rebuild_thumbs(self):
+        """重建缩略图区域。"""
+        for w in self._thumb_widgets:
+            self._thumb_container_layout.removeWidget(w)
+            w.deleteLater()
+        self._thumb_widgets.clear()
+
+        from PyQt6.QtWidgets import QLabel
+        for i, b64 in enumerate(self._pending_images):
+            # 从 base64 重建缩略图
+            import base64
+            from PyQt6.QtGui import QPixmap
+            # 用占位图（base64 解码太重了）
+            pm = QPixmap(70, 52)
+            pm.fill(QColor(60, 60, 70))
+
+            container = QWidget()
+            container.setFixedSize(82, 76)
+            container.setStyleSheet("background: #2a2a35; border-radius: 4px;")
+
+            vbox = QVBoxLayout(container)
+            vbox.setContentsMargins(3, 3, 3, 1)
+            vbox.setSpacing(1)
+
+            img_label = QLabel()
+            img_label.setPixmap(pm)
+            img_label.setFixedSize(70, 52)
+            img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            img_label.setStyleSheet("border: 1px solid #4a4a55; border-radius: 2px;")
+            vbox.addWidget(img_label, alignment=Qt.AlignmentFlag.AlignCenter)
+
+            del_btn = QPushButton(f"✕ {i + 1}")
+            del_btn.setFixedSize(50, 16)
+            del_btn.setStyleSheet("""
+                QPushButton { background: #c0392b; color: white; border: none;
+                    border-radius: 2px; font-size: 9px; padding: 0; }
+                QPushButton:hover { background: #e74c3c; }
+            """)
+            del_btn.clicked.connect(lambda _, idx=i: self._remove_thumbnail(idx))
+            vbox.addWidget(del_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+
+            count = self._thumb_container_layout.count()
+            self._thumb_container_layout.insertWidget(count - 1, container)
+            self._thumb_widgets.append(container)
+
+    def get_pending_images(self) -> list:
+        """获取所有待发送图片的 base64 列表。"""
+        return list(self._pending_images)
+
+    def clear_pending_images(self):
+        """清空待发送图片。"""
+        self._pending_images = []
+        for w in self._thumb_widgets:
+            self._thumb_container_layout.removeWidget(w)
+            w.deleteLater()
+        self._thumb_widgets = []
+        self._thumb_scroll.hide()
 
     def _send_follow_up(self):
         """用户按 Enter 或点击发送按钮时触发。"""
