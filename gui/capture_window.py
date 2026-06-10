@@ -60,6 +60,9 @@ class CaptureWindow(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setCursor(Qt.CursorShape.CrossCursor)
 
+        # 确保接收键盘事件（Ctrl+Z 等）
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
         # 状态机
         self._state = CaptureState.IDLE
 
@@ -89,6 +92,9 @@ class CaptureWindow(QWidget):
         self._start_pos = QPoint()
         self._end_pos = QPoint()
         super().showFullScreen()
+        # 确保获得键盘焦点
+        self.activateWindow()
+        self.raise_()
 
     # ============================================================
     # Paint
@@ -187,7 +193,7 @@ class CaptureWindow(QWidget):
             painter.setFont(hint2_font)
             painter.setPen(QColor(255, 255, 255, 180))
             painter.drawText(QRect(0, 80, w, 24), Qt.AlignmentFlag.AlignCenter,
-                             "Enter 确认当前框  |  Ctrl+Z 撤销  |  Esc 完成")
+                             "画框后 Enter 确认  |  Ctrl+Z 撤销  |  Esc 完成（放入对话框）")
         else:
             # 状态栏
             status_parts = []
@@ -331,17 +337,16 @@ class CaptureWindow(QWidget):
     # ============================================================
 
     def _confirm_current(self):
-        """确认当前编辑框，加入已确认列表，重置准备下一个。"""
+        """确认当前编辑框，加入已确认列表，重置准备下一个。
+        无选区时什么都不做 — 必须画框才能截图。
+        """
         r = self._get_normalized_rect()
 
         if r.isEmpty() or r.width() <= 10 or r.height() <= 10:
-            # 无选区 → 全屏截图
-            r = QRect(0, 0, self.width(), self.height())
-            self._confirmed.append((r, self._bg_pixmap.copy(r) if self._bg_pixmap else QPixmap()))
-            self._finish_and_exit()
+            # 无选区 → 忽略，不截全屏
             return
 
-        # 截取当前区域的小缩略图
+        # 截取当前区域的缩略图
         thumb = self._bg_pixmap.copy(r) if self._bg_pixmap else QPixmap()
         self._confirmed.append((r, thumb))
 

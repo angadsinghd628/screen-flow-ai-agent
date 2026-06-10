@@ -225,7 +225,8 @@ class ScreenAIAgent(QObject):
                 '<ctrl>+d': self._on_hotkey_triggered,
                 '<ctrl>+f': self._on_hotkey_toggle,
             }
-            self._hotkey_listener = pynput_keyboard.GlobalHotKeys(hotkeys)
+            self._hotkey_listener = pynput_keyboard.GlobalHotKeys(
+                hotkeys, suppress=False)  # suppress=False 让 Ctrl+Z 等正常传递
             self._hotkey_listener.start()  # 非阻塞，后台线程运行
             self._hotkey_registered = True
             print(f"[AIRAG] [OK] 快捷键注册成功 (pynput)")
