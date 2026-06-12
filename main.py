@@ -26,7 +26,11 @@ from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from pynput import keyboard as pynput_keyboard
 from langchain_core.messages import BaseMessage, AIMessage
 
-from config import DEFAULT_HOTKEY, TOGGLE_HOTKEY, OCR_HOTKEY, CONTEXT_FILE, MAX_MESSAGES, HTTP_PROXY
+from config import (
+    DEFAULT_HOTKEY, TOGGLE_HOTKEY, OCR_HOTKEY,
+    CONTEXT_FILE, HTTP_PROXY,
+    MAX_RETRIEVED_MESSAGES, RECENT_ROUNDS,
+)
 from utils.image_tool import qimage_to_pil, pil_to_base64, compress_image
 from utils.context_store import load_context, save_context
 from utils.ocr_tool import ocr_recognize_batch
@@ -48,13 +52,12 @@ class StreamWorker(QThread):
 
     def __init__(self, graph, messages: List[BaseMessage],
                  user_text: str, image_base64_list: Optional[List[str]],
-                 max_turns: int, parent=None):
+                 parent=None):
         super().__init__(parent)
         self._graph = graph
         self._messages = messages
         self._user_text = user_text
         self._image_base64_list = image_base64_list or []
-        self._max_turns = max_turns
 
     def run(self):
         try:
@@ -67,7 +70,6 @@ class StreamWorker(QThread):
                     messages=self._messages,
                     user_text=self._user_text,
                     image_base64_list=self._image_base64_list,
-                    max_turns=self._max_turns,
                 ):
                     self.token_received.emit(token)
 
@@ -395,10 +397,9 @@ class ScreenAIAgent(QObject):
 
         self._stream_worker = StreamWorker(
             graph=self._graph,
-            messages=list(self._messages),
+            messages=list(self._messages),  # 传全部历史，检索模块智能选取
             user_text=user_text,
             image_base64_list=image_base64_list,
-            max_turns=10,
         )
         self._stream_worker.token_received.connect(self._on_token_received)
         self._stream_worker.stream_finished.connect(self._on_stream_finished)
@@ -451,11 +452,9 @@ class ScreenAIAgent(QObject):
             ai_msg = AIMessage(content=full_response.strip())
             self._messages.append(ai_msg)
 
-        if len(self._messages) > MAX_MESSAGES:
-            self._messages = self._messages[-MAX_MESSAGES:]
-
+        # 保存全部历史（不再裁剪，检索时智能选取相关消息）
         save_context(self._messages, CONTEXT_FILE)
-        print(f"[AIRAG] 上下文已保存 ({len(self._messages)} 条消息)")
+        print(f"[AIRAG] 上下文已保存 ({len(self._messages)} 条消息，检索模块将智能选取相关历史)")
 
         self._stream_worker = None
         self._last_image_b64_list = []
@@ -531,8 +530,8 @@ def main():
         print(f"   {DEFAULT_HOTKEY.upper()} — 截图发送")
         print(f"   {TOGGLE_HOTKEY.upper()} — 隐藏/显示窗口")
         print(f"   直接输入文字即可与 AI 对话")
-        print(f"   Model:      doubao-seed-2-0-lite-260428")
-        print(f"   Context:    max {MAX_MESSAGES} messages")
+        print(f"   Model:      doubao-seed-2-0-mini-260428")
+        print(f"   记忆:       智能检索 (最近{RECENT_ROUNDS}轮 + 早期top{MAX_RETRIEVED_MESSAGES})")
         print("=" * 58)
         print("   [*] Check system tray (bottom-right) for icon")
         print("   [*] Right-click tray icon to capture manually")
