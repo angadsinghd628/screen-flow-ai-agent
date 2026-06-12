@@ -1,11 +1,10 @@
 """
-LangGraph 核心状态机 + 智能检索流式接口。
+LangGraph 核心状态机 + 流式接口。
 
 图结构：trim_history → call_vlm → END
 
 流式接口 stream_graph：
-  - 用 memory_retriever 从全部历史中检索相关消息
-  - 最近 N 轮完整保留 + 早期相关消息召回
+  - 保留最近 N 轮对话上下文
   - 直接调用 ChatDoubaoVL.stream() 获取逐 token 输出
 """
 from typing import AsyncIterator, Optional, List
