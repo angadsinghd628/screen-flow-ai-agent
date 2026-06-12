@@ -87,7 +87,7 @@ python main.py
 
 ## 下载
 
-从 [Releases](https://github.com/zebinlu7-a11y/screen-flow-ai-agent/releases) 下载 `Ai_Flow.zip`，解压双击运行。
+[**Ai_Flow.zip**](https://github.com/zebinlu7-a11y/screen-flow-ai-agent/releases/download/v1.0/Ai_Flow.zip)（75MB），解压双击 `Ai_Flow.exe` 运行。
 
 ## 项目结构
 
