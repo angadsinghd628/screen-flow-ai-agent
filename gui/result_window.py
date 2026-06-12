@@ -423,7 +423,7 @@ class ResultWindow(QWidget):
                 border-radius: 2px; font-size: 9px; padding: 0; }
             QPushButton:hover { background: #e74c3c; }
         """)
-        del_btn.clicked.connect(lambda: self._remove_thumbnail(idx))
+        del_btn.clicked.connect(lambda _, i=idx: self._remove_thumbnail(i))
         vbox.addWidget(del_btn, alignment=Qt.AlignmentFlag.AlignCenter)
 
         # 插入到 stretch 之前
@@ -437,60 +437,30 @@ class ResultWindow(QWidget):
         self.resize(self.width(), self.height() - 1)
 
     def _remove_thumbnail(self, index: int):
-        """删除指定缩略图。"""
-        if 0 <= index < len(self._pending_images):
-            self._pending_images.pop(index)
-            w = self._thumb_widgets.pop(index)
-            self._thumb_container_layout.removeWidget(w)
-            w.deleteLater()
-            self._rebuild_thumbs()
-            if not self._pending_images:
-                self._thumb_scroll.hide()
-
-    def _rebuild_thumbs(self):
-        """重建缩略图区域。"""
-        for w in self._thumb_widgets:
-            self._thumb_container_layout.removeWidget(w)
-            w.deleteLater()
-        self._thumb_widgets.clear()
-
-        from PyQt6.QtWidgets import QLabel
-        for i, b64 in enumerate(self._pending_images):
-            # 从 base64 重建缩略图
-            import base64
-            from PyQt6.QtGui import QPixmap
-            # 用占位图（base64 解码太重了）
-            pm = QPixmap(70, 52)
-            pm.fill(QColor(60, 60, 70))
-
-            container = QWidget()
-            container.setFixedSize(82, 76)
-            container.setStyleSheet("background: #2a2a35; border-radius: 4px;")
-
-            vbox = QVBoxLayout(container)
-            vbox.setContentsMargins(3, 3, 3, 1)
-            vbox.setSpacing(1)
-
-            img_label = QLabel()
-            img_label.setPixmap(pm)
-            img_label.setFixedSize(70, 52)
-            img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            img_label.setStyleSheet("border: 1px solid #4a4a55; border-radius: 2px;")
-            vbox.addWidget(img_label, alignment=Qt.AlignmentFlag.AlignCenter)
-
-            del_btn = QPushButton(f"✕ {i + 1}")
-            del_btn.setFixedSize(50, 16)
-            del_btn.setStyleSheet("""
-                QPushButton { background: #c0392b; color: white; border: none;
-                    border-radius: 2px; font-size: 9px; padding: 0; }
-                QPushButton:hover { background: #e74c3c; }
-            """)
-            del_btn.clicked.connect(lambda _, idx=i: self._remove_thumbnail(idx))
-            vbox.addWidget(del_btn, alignment=Qt.AlignmentFlag.AlignCenter)
-
-            count = self._thumb_container_layout.count()
-            self._thumb_container_layout.insertWidget(count - 1, container)
-            self._thumb_widgets.append(container)
+        """删除指定缩略图 — 不重建，直接移除并更新编号。"""
+        if not (0 <= index < len(self._pending_images)):
+            return
+        self._pending_images.pop(index)
+        w = self._thumb_widgets.pop(index)
+        self._thumb_container_layout.removeWidget(w)
+        w.hide()
+        w.deleteLater()
+        # 更新剩余缩略图编号（不重建 widget）
+        for i, container in enumerate(self._thumb_widgets):
+            vbox = container.layout()
+            if vbox:
+                for j in range(vbox.count()):
+                    item = vbox.itemAt(j)
+                    btn = item.widget() if item else None
+                    if isinstance(btn, QPushButton) and "✕" in (btn.text() or ""):
+                        btn.setText(f"✕ {i + 1}")
+                        try:
+                            btn.clicked.disconnect()
+                        except Exception:
+                            pass
+                        btn.clicked.connect(lambda _, idx=i: self._remove_thumbnail(idx))
+        if not self._pending_images:
+            self._thumb_scroll.hide()
 
     def get_pending_images(self) -> list:
         """获取所有待发送图片的 base64 列表。"""
