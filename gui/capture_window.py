@@ -67,18 +67,18 @@ class CaptureWindow(QWidget):
 
     def showFullScreen(self):
         screen = QApplication.primaryScreen()
-        self._dpr = 1.0
         if screen:
-            self._dpr = screen.devicePixelRatio()
-            full_pm = screen.grabWindow(0)
-            # 适配 DPI：物理像素 → 逻辑像素
-            if self._dpr > 1.0:
-                lw = int(full_pm.width() / self._dpr)
-                lh = int(full_pm.height() / self._dpr)
-                self._bg = full_pm.scaled(lw, lh, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            else:
-                self._bg = full_pm
+            self._bg = screen.grabWindow(0)
+            # 精确匹配屏幕几何（避免 showFullScreen 在缩放屏上偏移）
+            self.setGeometry(screen.geometry())
         self._confirmed = []
+        self._state = CaptureState.IDLE
+        self._start = QPoint()
+        self._end = QPoint()
+        self._active_handle = -1
+        self.show()
+        self.activateWindow()
+        self.raise_()
         self._state = CaptureState.IDLE
         self._start = QPoint()
         self._end = QPoint()
@@ -350,10 +350,7 @@ class CaptureWindow(QWidget):
 
         results = []
         for rect, _ in self._confirmed:
-            # 逻辑坐标 → 物理像素
-            dpr = getattr(self, '_dpr', 1.0)
-            x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
-            pix = screen.grabWindow(0, int(x * dpr), int(y * dpr), int(w * dpr), int(h * dpr))
+            pix = screen.grabWindow(0, rect.x(), rect.y(), rect.width(), rect.height())
             results.append((pix.toImage(), rect))
 
         self.captured.emit(results)
