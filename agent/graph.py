@@ -17,7 +17,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, System
 from agent.state import AgentState
 from agent.llm_client import ChatDoubaoVL, build_text_message, build_multimodal_message
 from config import MAX_RETRIEVED_MESSAGES, RECENT_ROUNDS
-from utils.memory_retriever import retrieve_relevant
+from utils.memory_retriever import retrieve_relevant, needs_retrieval
 
 # 系统提示词
 SYSTEM_PROMPT = (
@@ -116,14 +116,20 @@ async def stream_graph(
     else:
         input_msg = HumanMessage(content="请描述当前看到的内容。")
 
-    # 2. 智能检索相关历史（不包含本轮输入）
+    # 2. 智能上下文：判断是否需要检索
     if messages:
-        relevant = retrieve_relevant(
-            query=user_text or "",
-            all_messages=list(messages),
-            top_k=MAX_RETRIEVED_MESSAGES,
-            recent_rounds=RECENT_ROUNDS,
-        )
+        if needs_retrieval(user_text):
+            # 需要检索 → 关键词召回早期相关消息
+            relevant = retrieve_relevant(
+                query=user_text or "",
+                all_messages=list(messages),
+                top_k=MAX_RETRIEVED_MESSAGES,
+                recent_rounds=RECENT_ROUNDS,
+            )
+        else:
+            # 不需要检索 → 只保留最近 N 轮
+            recent_count = RECENT_ROUNDS * 2
+            relevant = list(messages[-recent_count:]) if len(messages) > recent_count else list(messages)
     else:
         relevant = []
 

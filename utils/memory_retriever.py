@@ -99,6 +99,50 @@ def _score_message(msg: BaseMessage, keywords: List[str]) -> float:
     return score
 
 
+# 需要检索上下文的触发词（用户提到过去的对话）
+_RETRIEVAL_TRIGGERS = [
+    "刚才", "刚刚", "之前", "前面", "上次", "上一次",
+    "那个", "哪个", "那些", "之前的",
+    "继续", "接着", "回到", "回过来", "返回",
+    "还记得", "之前说", "你之前",
+    "再", "再问", "再说",
+    "前面那个", "上面那个", "刚刚那个",
+]
+
+
+def needs_retrieval(query: str) -> bool:
+    """
+    判断当前 query 是否需要检索历史上下文。
+
+    不需要检索的情况：
+    - 简单问候（你好、早上好...）
+    - 全新的独立问题（不引用过去内容）
+    - 纯截图描述请求
+    """
+    if not query or not query.strip():
+        return False
+
+    q = query.strip().lower()
+
+    # 不检索：简单问候
+    greetings = {"你好", "hi", "hello", "嘿", "嗨", "早上好", "晚上好", "下午好"}
+    if q in greetings or len(q) <= 3:
+        return False
+
+    # 触发词 → 需要检索
+    for trigger in _RETRIEVAL_TRIGGERS:
+        if trigger in q:
+            return True
+
+    # 关键词太少（≤2 个有效词）→ 可能是新话题，不检索
+    keywords = keyword_rewrite(query)
+    if len(keywords) <= 2:
+        return False
+
+    # 默认检索（有一定信息量的 query 都检索，开销很小）
+    return True
+
+
 def retrieve_relevant(
     query: str,
     all_messages: List[BaseMessage],
