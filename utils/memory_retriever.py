@@ -1,14 +1,14 @@
 """
-智能记忆检索 — 本地关键词提取 + 相关消息召回。
+智能记忆检索 — AI 判断是否需要 + 关键词召回相关消息。
 
 策略：
-  1. 从用户输入中提取关键词（中英文 + 数字）
-  2. 遍历全部历史消息，对每条消息计算关键词命中得分
-  3. 返回得分最高的 top-K 条消息
+  1. AI 判断当前问题是否需要检索历史（轻量 yes/no 调用）
+  2. 需要 → 关键词召回早期相关消息 + 最近 N 轮
+  3. 不需要 → 只带最近 N 轮
 """
 import re
-from typing import List
-from langchain_core.messages import BaseMessage
+from typing import List, Optional
+from langchain_core.messages import BaseMessage, HumanMessage
 
 # 中文停用词
 _STOP_WORDS = set(
@@ -18,29 +18,21 @@ _STOP_WORDS = set(
     "在 有 和 与 或 但 而 且 虽然 因为 所以 如果 就 都 也 还 要 把 被 让 给 对 从 到 向 跟 同 比 为 除了 不只".split()
 )
 
-# 最少关键词长度（避免太短的词）
-_MIN_KEYWORD_LEN = 2
-
 
 def keyword_rewrite(query: str) -> List[str]:
     """
-    从用户输入中提取关键词。
-
-    策略：
-    - 中文：提取 2-4 字连续片段，过滤停用词
-    - 英文：提取完整单词
-    - 数字：保留
+    从用户输入中提取关键词（中英文 + 数字）。
     """
     if not query:
         return []
 
     keywords = []
 
-    # 1. 提取英文单词（连续字母串）
+    # 英文单词
     eng_words = re.findall(r'[a-zA-Z]{2,}', query)
     keywords.extend(w.lower() for w in eng_words)
 
-    # 2. 提取中文词（2-4字 n-gram）
+    # 中文 2-4 字 n-gram
     chinese_chars = re.findall(r'[一-鿿]', query)
     for n in (4, 3, 2):
         for i in range(len(chinese_chars) - n + 1):
@@ -48,15 +40,12 @@ def keyword_rewrite(query: str) -> List[str]:
             if word not in _STOP_WORDS and word not in keywords:
                 keywords.append(word)
 
-    # 3. 去重 + 限制数量
     seen = set()
     result = []
     for kw in keywords:
         if kw not in seen:
             seen.add(kw)
             result.append(kw)
-
-    # 限制关键词数量，避免太宽泛的搜索
     return result[:20]
 
 
@@ -75,10 +64,7 @@ def _extract_text(msg: BaseMessage) -> str:
 
 
 def _score_message(msg: BaseMessage, keywords: List[str]) -> float:
-    """
-    对消息计算关键词命中得分。
-    使用 BM25 简化版：关键词命中次数 / 文档长度归一化。
-    """
+    """BM25 简化版：关键词命中得分 / 文档长度归一化。"""
     text = _extract_text(msg)
     if not text or not keywords:
         return 0.0
@@ -88,60 +74,112 @@ def _score_message(msg: BaseMessage, keywords: List[str]) -> float:
     for kw in keywords:
         count = text_lower.count(kw)
         if count > 0:
-            # 每个命中关键词 +1 基础分，多次命中给额外加分
             score += 1.0 + min(count - 1, 3) * 0.3
 
-    # 长度归一化（避免长消息天然占优）
     doc_len = len(text)
     if doc_len > 100:
         score = score * (1.0 / max(1, doc_len / 200))
-
     return score
 
 
-# 需要检索上下文的触发词（用户提到过去的对话）
-_RETRIEVAL_TRIGGERS = [
-    "刚才", "刚刚", "之前", "前面", "上次", "上一次",
-    "那个", "哪个", "那些", "之前的",
-    "继续", "接着", "回到", "回过来", "返回",
-    "还记得", "之前说", "你之前",
-    "再", "再问", "再说",
-    "前面那个", "上面那个", "刚刚那个",
-]
+# ============================================================
+# AI 判断是否需要检索
+# ============================================================
+
+_RETRIEVAL_DECISION_PROMPT = (
+    "你是一个上下文判断助手。用户正在与AI进行多轮对话。"
+    "请判断用户的这条新消息是否需要查看之前的对话历史才能正确回答。"
+    "只回答 YES 或 NO，不要输出任何其他内容。\n\n"
+    "需要检索历史的情况：\n"
+    "- 用户引用了之前讨论过的话题、代码、报错等\n"
+    "- 用户说'刚才那个'、'继续'、'回到xxx'\n"
+    "- 需要了解之前的对话背景才能理解问题\n\n"
+    "不需要检索的情况：\n"
+    "- 一个全新的独立问题\n"
+    "- 简单问候\n"
+    "- 完全不相干的新话题\n\n"
+    "最近对话内容：\n"
+    "{context}\n\n"
+    "用户新消息：{query}\n\n"
+    "需要检索历史吗？(YES/NO):"
+)
+
+# 缓存最后一次的决策结果（同一 query 不重复调用 AI）
+_last_decision: dict = {"query": "", "result": False}
 
 
-def needs_retrieval(query: str) -> bool:
+def ai_should_retrieve(query: str, recent_context: str = "",
+                       model_name: Optional[str] = None) -> bool:
     """
-    判断当前 query 是否需要检索历史上下文。
+    让 AI 判断是否需要检索历史上下文。
 
-    不需要检索的情况：
-    - 简单问候（你好、早上好...）
-    - 全新的独立问题（不引用过去内容）
-    - 纯截图描述请求
+    用最轻量的模型做 yes/no 判断，耗时约 0.5-1 秒。
+
+    Args:
+        query: 用户当前输入
+        recent_context: 最近的对话摘要（用于判断）
+        model_name: 指定模型名，默认用 mini
+
+    Returns:
+        True 需要检索，False 不需要
     """
+    global _last_decision
+
     if not query or not query.strip():
         return False
 
-    q = query.strip().lower()
-
-    # 不检索：简单问候
-    greetings = {"你好", "hi", "hello", "嘿", "嗨", "早上好", "晚上好", "下午好"}
-    if q in greetings or len(q) <= 3:
+    # 简单问候直接跳过，不上 AI
+    q = query.strip()
+    if q in {"你好", "hi", "hello", "嘿", "嗨", "早上好", "晚上好", "下午好"}:
+        return False
+    if len(q) <= 3:
         return False
 
-    # 触发词 → 需要检索
-    for trigger in _RETRIEVAL_TRIGGERS:
-        if trigger in q:
+    # 命中缓存（同一 query 不重复调 AI）
+    if q == _last_decision["query"]:
+        return _last_decision["result"]
+
+    # 明显引用过去的触发词 → 直接检索，不用问 AI
+    obvious_triggers = ["刚才那个", "上面那个", "前面那个", "回到刚才", "还记得上次"]
+    for t in obvious_triggers:
+        if t in q:
+            _last_decision = {"query": q, "result": True}
             return True
 
-    # 关键词太少（≤2 个有效词）→ 可能是新话题，不检索
-    keywords = keyword_rewrite(query)
-    if len(keywords) <= 2:
-        return False
+    try:
+        # 用轻量模型做决策
+        from agent.llm_client import ChatDoubaoVL
+        from langchain_core.messages import SystemMessage
 
-    # 默认检索（有一定信息量的 query 都检索，开销很小）
-    return True
+        prompt = _RETRIEVAL_DECISION_PROMPT.format(
+            context=recent_context or "（尚无对话历史）",
+            query=q,
+        )
 
+        llm = ChatDoubaoVL(model_name=model_name or "doubao-seed-2-0-mini-260428")
+        response = llm.invoke([SystemMessage(content=prompt)])
+        answer = response.content.strip().upper() if hasattr(response, 'content') else ""
+
+        result = "YES" in answer
+        _last_decision = {"query": q, "result": result}
+        return result
+
+    except Exception:
+        # API 调用失败 → 回退到关键词判断
+        keywords = keyword_rewrite(query)
+        return len(keywords) >= 3
+
+
+def needs_retrieval(query: str, recent_context: str = "") -> bool:
+    """
+    判断是否需要检索 — 现在由 AI 决定（别名，向后兼容）。
+    """
+    return ai_should_retrieve(query, recent_context)
+
+
+# ============================================================
+# 检索主函数
+# ============================================================
 
 def retrieve_relevant(
     query: str,
@@ -153,54 +191,38 @@ def retrieve_relevant(
     从历史消息中检索与 query 最相关的消息。
 
     混合策略：
-    - 最近 `recent_rounds` 轮（recent_rounds*2 条）完整保留
+    - 最近 `recent_rounds` 轮完整保留
     - 更早的消息中按关键词相关性检索 top_k 条
     - 返回结果按时间顺序排列
-
-    Args:
-        query: 用户当前输入
-        all_messages: 全部历史消息
-        top_k: 检索返回的最大消息数
-        recent_rounds: 完整保留的最近轮数
-
-    Returns:
-        筛选后的消息列表（按时间顺序）
     """
     if not all_messages:
         return []
 
     total = len(all_messages)
-    recent_count = recent_rounds * 2  # 每轮 1Q+1A
+    recent_count = recent_rounds * 2
 
-    # 最近 N 轮完整保留
     if total <= recent_count:
         return list(all_messages)
 
     recent_msgs = list(all_messages[-recent_count:])
     older_msgs = list(all_messages[:-recent_count])
 
-    # 没有关键词 → 只返回最近的消息
     keywords = keyword_rewrite(query)
     if not keywords or not older_msgs:
         return recent_msgs
 
-    # 对更早的消息评分
     scored = []
     for i, msg in enumerate(older_msgs):
         s = _score_message(msg, keywords)
         if s > 0:
             scored.append((s, i, msg))
 
-    # 按得分降序
     scored.sort(key=lambda x: x[0], reverse=True)
-
-    # 取 top_k，按原始时间顺序排列
     retrieved = scored[:top_k]
-    retrieved.sort(key=lambda x: x[1])  # 按原始索引排序
+    retrieved.sort(key=lambda x: x[1])
 
     result = [m for _, _, m in retrieved] + recent_msgs
 
-    # 避免重复
     seen_ids = set()
     final = []
     for m in result:

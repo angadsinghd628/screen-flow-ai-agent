@@ -17,7 +17,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, System
 from agent.state import AgentState
 from agent.llm_client import ChatDoubaoVL, build_text_message, build_multimodal_message
 from config import MAX_RETRIEVED_MESSAGES, RECENT_ROUNDS
-from utils.memory_retriever import retrieve_relevant, needs_retrieval
+from utils.memory_retriever import retrieve_relevant, needs_retrieval, _extract_text
 
 # 系统提示词
 SYSTEM_PROMPT = (
@@ -116,10 +116,17 @@ async def stream_graph(
     else:
         input_msg = HumanMessage(content="请描述当前看到的内容。")
 
-    # 2. 智能上下文：判断是否需要检索
+    # 2. 智能上下文：AI 判断是否需要检索
     if messages:
-        if needs_retrieval(user_text):
-            # 需要检索 → 关键词召回早期相关消息
+        # 提取最近对话摘要（最近 3 条用户消息）给 AI 判断
+        recent_user_msgs = [
+            _extract_text(m) for m in messages[-6:]
+            if m.__class__.__name__ == "HumanMessage"
+        ]
+        recent_context = " | ".join(recent_user_msgs[-3:]) if recent_user_msgs else ""
+
+        if needs_retrieval(user_text or "", recent_context):
+            # AI 判断需要检索 → 关键词召回早期相关消息
             relevant = retrieve_relevant(
                 query=user_text or "",
                 all_messages=list(messages),
@@ -127,7 +134,7 @@ async def stream_graph(
                 recent_rounds=RECENT_ROUNDS,
             )
         else:
-            # 不需要检索 → 只保留最近 N 轮
+            # AI 判断不需要 → 只保留最近 N 轮
             recent_count = RECENT_ROUNDS * 2
             relevant = list(messages[-recent_count:]) if len(messages) > recent_count else list(messages)
     else:
