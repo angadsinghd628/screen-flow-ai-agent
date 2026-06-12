@@ -27,6 +27,7 @@ class ApiKeyDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._drag_pos = None  # 拖动起始位置
         self._setup_ui()
 
     def _setup_ui(self):
@@ -213,6 +214,24 @@ class ApiKeyDialog(QDialog):
         if skey:
             set_tencent_secret_key(skey)
         self.accept()
+
+    # ---- 拖动窗口 ----
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_pos = event.globalPosition().toPoint()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._drag_pos is not None:
+            delta = event.globalPosition().toPoint() - self._drag_pos
+            self.move(self.pos() + delta)
+            self._drag_pos = event.globalPosition().toPoint()
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self._drag_pos = None
+        super().mouseReleaseEvent(event)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Return or event.key() == Qt.Key.Key_Enter:

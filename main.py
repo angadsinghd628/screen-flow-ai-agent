@@ -28,8 +28,7 @@ from langchain_core.messages import BaseMessage, AIMessage
 
 from config import (
     DEFAULT_HOTKEY, TOGGLE_HOTKEY, OCR_HOTKEY,
-    CONTEXT_FILE, HTTP_PROXY,
-    MAX_RETRIEVED_MESSAGES, RECENT_ROUNDS,
+    CONTEXT_FILE, HTTP_PROXY, RECENT_ROUNDS,
 )
 from utils.image_tool import qimage_to_pil, pil_to_base64, compress_image
 from utils.context_store import load_context, save_context
@@ -353,10 +352,11 @@ class ScreenAIAgent(QObject):
             image_base64 = pil_to_base64(pil_img)
             self._result_window.add_image_thumbnail(image_base64, img)
 
-        # 窗口保持可见
+        # 窗口保持可见 + 自动聚焦输入框
         if not self._result_window.isVisible():
             self._result_window.show()
         self._result_window.raise_()
+        self._result_window.focus_input()
 
     # ============================================================
     # Step 2: AI Stream
@@ -531,7 +531,7 @@ def main():
         print(f"   {TOGGLE_HOTKEY.upper()} — 隐藏/显示窗口")
         print(f"   直接输入文字即可与 AI 对话")
         print(f"   Model:      doubao-seed-2-0-mini-260428")
-        print(f"   记忆:       智能检索 (最近{RECENT_ROUNDS}轮 + 早期top{MAX_RETRIEVED_MESSAGES})")
+        print(f"   记忆:       最近 {RECENT_ROUNDS} 轮对话")
         print("=" * 58)
         print("   [*] Check system tray (bottom-right) for icon")
         print("   [*] Right-click tray icon to capture manually")

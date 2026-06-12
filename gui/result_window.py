@@ -383,6 +383,11 @@ class ResultWindow(QWidget):
         """清空底部追问输入框。"""
         self._ask_input.clear()
 
+    def focus_input(self):
+        """聚焦到底部输入框（截完图后直接可打字）。"""
+        self._ask_input.setFocus()
+        self._ask_input.raise_()
+
     # ---- 待发送图片缩略图 ----
 
     def add_image_thumbnail(self, base64_data: str, qimage: QImage):
