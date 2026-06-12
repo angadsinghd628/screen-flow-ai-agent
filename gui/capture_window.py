@@ -97,9 +97,13 @@ class CaptureWindow(QWidget):
         w, h = self.width(), self.height()
         full = QRect(0, 0, w, h)
 
-        # 背景
+        # 背景（高分屏：物理像素图缩放匹配窗口逻辑尺寸）
         if self._bg:
-            p.drawPixmap(full, self._bg, full)
+            if self._bg.size() != self.size():
+                bg = self._bg.scaled(self.size(), Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            else:
+                bg = self._bg
+            p.drawPixmap(full, bg, full)
         p.fillRect(full, QColor(0, 0, 0, int(255 * MASK_OPACITY)))
 
         # ---- 已确认框（绿色） ----
