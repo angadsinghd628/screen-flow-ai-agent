@@ -17,7 +17,7 @@ AIRAG — 智能截图解析悬浮窗工具 主入口
 import sys
 import os
 
-# 修复 Windows 高 DPI 缩放导致全屏窗口偏移/放大
+# Qt 高 DPI 支持
 os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
 os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
 
@@ -554,15 +554,6 @@ def main():
         os.environ["HTTPS_PROXY"] = HTTP_PROXY
         print(f"   Proxy:      {HTTP_PROXY}")
     print()
-
-    # 修复缩放屏全屏窗口偏移（必须在 QApplication 创建之前）
-    try:
-        from PyQt6.QtCore import QGuiApplication
-        QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
-            Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
-        )
-    except Exception:
-        pass
 
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
