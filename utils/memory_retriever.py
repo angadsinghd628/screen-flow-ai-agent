@@ -164,9 +164,15 @@ def ai_should_retrieve(query: str, recent_context: str = "",
         _last_decision = {"query": q, "result": result}
         return result
 
-    except Exception:
-        # API 调用失败 → 回退到关键词判断
+    except Exception as e:
+        # API 调用失败（无网络/Key过期等）→ 回退到本地判断
+        err = str(e)
+        if "401" in err or "AuthenticationError" in err or "Unauthorized" in err:
+            # API Key 问题 → 用关键词判断
+            pass
+        # 其他错误也回退
         keywords = keyword_rewrite(query)
+        # 有关键词且不像是全新话题 → 尝试检索
         return len(keywords) >= 3
 
 
