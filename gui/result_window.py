@@ -44,7 +44,8 @@ class ResultWindow(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._buffer = ""
-        self._pending_images: list = []  # 待发送图片 (base64 列表)
+        self._pending_images: list = []    # 待发送图片 (base64 列表)
+        self._pending_qimgs: list = []    # 待发送图片 (QImage 列表，供复制用)
         self._thumb_widgets: list = []    # 缩略图 widget 列表
 
         # ---- 拖动/缩放状态 ----
@@ -188,6 +189,25 @@ class ResultWindow(QWidget):
         self._thumb_scroll.setWidget(self._thumb_container)
         self._thumb_scroll.setWidgetResizable(True)
         layout.addWidget(self._thumb_scroll)
+
+        # ---- 复制按钮区（缩略图下方，有图时显示） ----
+        self._copy_bar = QHBoxLayout()
+        self._copy_bar.setContentsMargins(0, 2, 0, 0)
+
+        self._copy_btn = QPushButton("📋复制")
+        self._copy_btn.setFixedHeight(26)
+        self._copy_btn.setStyleSheet("""
+            QPushButton {
+                background: #2a5a3a; color: #aaddaa; border: 1px solid #3a6a4a;
+                border-radius: 4px; padding: 2px 14px; font-size: 10px;
+            }
+            QPushButton:hover { background: #3a7a4a; color: #ccffcc; }
+        """)
+        self._copy_btn.clicked.connect(self._copy_images_to_clipboard)
+        self._copy_btn.hide()
+        self._copy_bar.addWidget(self._copy_btn)
+        self._copy_bar.addStretch()
+        layout.addLayout(self._copy_bar)
 
         # ---- 底部追问输入区 ----
         ask_layout = QHBoxLayout()
@@ -393,6 +413,10 @@ class ResultWindow(QWidget):
     def add_image_thumbnail(self, base64_data: str, qimage: QImage):
         """添加一张截图缩略图到待发送列表。"""
         self._pending_images.append(base64_data)
+        self._pending_qimgs.append(qimage)
+
+        # 显示复制按钮
+        self._copy_btn.show()
 
         # 创建 70×52 缩略图
         from PyQt6.QtWidgets import QLabel
@@ -441,6 +465,7 @@ class ResultWindow(QWidget):
         if not (0 <= index < len(self._pending_images)):
             return
         self._pending_images.pop(index)
+        self._pending_qimgs.pop(index)
         w = self._thumb_widgets.pop(index)
         self._thumb_container_layout.removeWidget(w)
         w.hide()
@@ -461,6 +486,29 @@ class ResultWindow(QWidget):
                         btn.clicked.connect(lambda _, idx=i: self._remove_thumbnail(idx))
         if not self._pending_images:
             self._thumb_scroll.hide()
+            self._copy_btn.hide()
+
+    def _copy_images_to_clipboard(self):
+        """将所有待发送图片复制到剪贴板。"""
+        if not self._pending_qimgs:
+            return
+        from PyQt6.QtWidgets import QApplication
+        clipboard = QApplication.clipboard()
+        if len(self._pending_qimgs) == 1:
+            clipboard.setImage(self._pending_qimgs[0])
+        else:
+            # 多张图：水平拼接
+            total_w = sum(img.width() for img in self._pending_qimgs) + (len(self._pending_qimgs) - 1) * 4
+            max_h = max(img.height() for img in self._pending_qimgs)
+            combined = QImage(total_w, max_h, QImage.Format.Format_ARGB32)
+            combined.fill(QColor(255, 255, 255))
+            p = QPainter(combined)
+            x = 0
+            for img in self._pending_qimgs:
+                p.drawImage(x, (max_h - img.height()) // 2, img)
+                x += img.width() + 4
+            p.end()
+            clipboard.setImage(combined)
 
     def get_pending_images(self) -> list:
         """获取所有待发送图片的 base64 列表。"""
@@ -469,11 +517,13 @@ class ResultWindow(QWidget):
     def clear_pending_images(self):
         """清空待发送图片。"""
         self._pending_images = []
+        self._pending_qimgs = []
         for w in self._thumb_widgets:
             self._thumb_container_layout.removeWidget(w)
             w.deleteLater()
         self._thumb_widgets = []
         self._thumb_scroll.hide()
+        self._copy_btn.hide()
 
     def _send_follow_up(self):
         """用户按 Enter 或点击发送按钮时触发。"""
