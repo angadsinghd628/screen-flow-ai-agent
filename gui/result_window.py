@@ -99,7 +99,18 @@ class ResultWindow(QWidget):
         title_bar = QHBoxLayout()
         title_bar.setSpacing(6)
 
-        self._title_label = QLabel("🤖 AI 解析结果")
+        # 侧边栏切换按钮
+        self._sidebar_btn = QPushButton("☰")
+        self._sidebar_btn.setFixedSize(26, 26)
+        self._sidebar_btn.setToolTip("对话历史")
+        self._sidebar_btn.setStyleSheet("""
+            QPushButton { background: #3a3a40; color: #ccc; border: none;
+                border-radius: 4px; font-size: 14px; font-weight: bold; }
+            QPushButton:hover { background: #555; color: white; }
+        """)
+        title_bar.addWidget(self._sidebar_btn)
+
+        self._title_label = QLabel("Ai_Flow")
         self._title_label.setFont(QFont("Microsoft YaHei", 11))
         self._title_label.setStyleSheet("color: #88aaff; font-weight: bold;")
         title_bar.addWidget(self._title_label)

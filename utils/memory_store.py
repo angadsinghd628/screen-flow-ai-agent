@@ -1,0 +1,209 @@
+"""
+长期记忆管理 — AI 提取事实 + 关键词检索 + 注入 System Prompt。
+
+记忆提取: 对话结束后调 mini 模型提取关键事实 → 存 profile.json
+记忆检索: 新消息来时关键词匹配相关事实 → 注入 prompt
+"""
+import json
+import os
+import re
+import time
+from typing import List, Optional, Dict
+from datetime import datetime
+
+from utils.user_manager import get_user_dir, _ensure_dir
+
+
+def _profile_path(user_id: str) -> str:
+    return os.path.join(get_user_dir(user_id), "profile.json")
+
+
+def load_profile(user_id: str) -> dict:
+    """加载用户长期记忆档案。"""
+    path = _profile_path(user_id)
+    if not os.path.exists(path):
+        return _empty_profile(user_id)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return _empty_profile(user_id)
+
+
+def save_profile(user_id: str, profile: dict):
+    """保存用户档案。"""
+    profile["updated"] = datetime.now().isoformat()
+    _ensure_dir(get_user_dir(user_id))
+    with open(_profile_path(user_id), "w", encoding="utf-8") as f:
+        json.dump(profile, f, ensure_ascii=False, indent=2)
+
+
+def _empty_profile(user_id: str) -> dict:
+    return {
+        "user_id": user_id,
+        "created": datetime.now().isoformat(),
+        "updated": datetime.now().isoformat(),
+        "facts": [],
+        "summary": "",
+        "stats": {"total_conversations": 0, "total_messages": 0},
+    }
+
+
+# ============================================================
+# 事实提取（AI）
+# ============================================================
+
+_EXTRACT_PROMPT = (
+    "你是一个信息提取助手。请从以下对话中提取关于用户的关键事实。"
+    "只提取用户的个人信息，不要提取AI的回复内容。"
+    "输出格式：每行一个事实，用\"类型: 内容\"格式。"
+    "类型包括: identity(身份), preference(偏好), project(项目), problem(遇到的问题), knowledge(知识水平)\n\n"
+    "示例输出:\n"
+    "identity: 用户叫张三\n"
+    "project: 正在开发Ai_Flow截图工具，使用PyQt6+LangGraph\n"
+    "preference: 喜欢简洁的代码，不要过多注释\n"
+    "problem: 在Windows高分屏上截图模糊\n\n"
+    "对话内容:\n{conversation}\n\n"
+    "请提取事实（如果没有值得提取的信息，输出\"NONE\"）:"
+)
+
+
+def extract_facts_from_conversation(
+    messages: List, user_id: str,
+    model_name: str = "doubao-seed-2-0-mini-260428",
+) -> List[dict]:
+    """
+    调 AI 从对话中提取长期记忆事实。
+    返回事实列表：[{"type": "identity", "content": "用户叫张三"}, ...]
+    """
+    if not messages:
+        return []
+
+    # 构建对话文本（只取最后10轮）
+    recent = messages[-20:] if len(messages) > 20 else messages
+    conv_text = ""
+    for m in recent:
+        role = "用户" if m.get("role") == "user" else "AI"
+        content = m.get("content", "")
+        if isinstance(content, list):
+            # 多模态消息，只取文本部分
+            texts = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]
+            content = " ".join(texts)
+        if isinstance(content, str) and content.strip():
+            conv_text += f"{role}: {content[:300]}\n"
+
+    if not conv_text.strip():
+        return []
+
+    prompt = _EXTRACT_PROMPT.format(conversation=conv_text)
+
+    try:
+        from agent.llm_client import ChatDoubaoVL
+        from langchain_core.messages import SystemMessage
+
+        llm = ChatDoubaoVL(model_name=model_name)
+        response = llm.invoke([SystemMessage(content=prompt)])
+        text = response.content if hasattr(response, 'content') else ""
+
+        if "NONE" in text.upper():
+            return []
+
+        facts = []
+        for line in text.strip().split("\n"):
+            line = line.strip()
+            if ":" in line:
+                parts = line.split(":", 1)
+                if len(parts) == 2:
+                    ftype = parts[0].strip()
+                    fcontent = parts[1].strip()
+                    if fcontent and len(fcontent) > 3:
+                        facts.append({
+                            "id": f"f{int(time.time()*1000)}",
+                            "type": ftype,
+                            "content": fcontent,
+                            "created": datetime.now().isoformat(),
+                        })
+        return facts
+
+    except Exception as e:
+        print(f"[Memory] 事实提取失败: {e}")
+        return []
+
+
+# ============================================================
+# 事实合并 + 检索
+# ============================================================
+
+def merge_facts(existing: List[dict], new_facts: List[dict]) -> List[dict]:
+    """合并新旧事实，去重（按内容相似度）。"""
+    result = list(existing)
+    for nf in new_facts:
+        is_dup = False
+        for ef in result:
+            # 简单去重：同类型+相似内容
+            if ef.get("type") == nf.get("type"):
+                existing_words = set(ef.get("content", ""))
+                new_words = set(nf.get("content", ""))
+                if existing_words and new_words:
+                    overlap = len(existing_words & new_words) / max(len(existing_words | new_words), 1)
+                    if overlap > 0.5:
+                        is_dup = True
+                        break
+        if not is_dup:
+            result.append(nf)
+    # 保留最近50条事实
+    return result[-50:]
+
+
+def search_facts(query: str, facts: List[dict], top_k: int = 5) -> List[dict]:
+    """关键词检索相关事实，返回 top_k 条。"""
+    if not query or not facts:
+        return []
+
+    keywords = set(_extract_keywords(query))
+    scored = []
+    for f in facts:
+        content = f.get("content", "")
+        score = sum(1 for kw in keywords if kw in content)
+        if score > 0:
+            scored.append((score, f))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [f for _, f in scored[:top_k]]
+
+
+def _extract_keywords(text: str) -> List[str]:
+    """提取关键中文词。"""
+    words = re.findall(r'[一-鿿]{2,4}', text)
+    return [w for w in words if w not in _STOP_WORDS][:15]
+
+
+_STOP_WORDS = set("的了吗呢啊这个是哪个有什么可以能不能怎么为什么".split())
+
+
+# ============================================================
+# 记忆注入
+# ============================================================
+
+def build_memory_context(user_id: str, query: str = "") -> str:
+    """
+    构建注入 prompt 的记忆文本。
+    返回空字符串表示无相关记忆。
+    """
+    profile = load_profile(user_id)
+    facts = profile.get("facts", [])
+
+    if not facts:
+        return ""
+
+    # 检索相关事实
+    relevant = search_facts(query, facts, top_k=5) if query else facts[-3:]
+
+    if not relevant:
+        return ""
+
+    lines = ["\n\n## 关于当前用户（长期记忆）"]
+    for f in relevant:
+        lines.append(f"- {f.get('content', '')}")
+
+    return "\n".join(lines)

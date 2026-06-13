@@ -16,9 +16,11 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, System
 from agent.state import AgentState
 from agent.llm_client import ChatDoubaoVL, build_text_message, build_multimodal_message
 from config import RECENT_ROUNDS
+from utils.memory_store import build_memory_context, load_profile
+from utils.user_manager import user_id_from_key, get_active_conversation_id, load_conversation
 
-# 系统提示词
-SYSTEM_PROMPT = (
+# 基础系统提示词
+BASE_SYSTEM_PROMPT = (
     "你是一个实用的桌面 AI 助手，用户可能发送文字、截图或两者结合。"
     "请仔细分析所有输入内容，给出详细、完整、有深度的回答。"
     "如果是代码问题，请解释原理并给出代码示例；"
@@ -27,6 +29,30 @@ SYSTEM_PROMPT = (
     "如果用户只是提问，请充分展开回答，不要过于简短。"
     "回答风格：专业但不啰嗦，结构清晰，善用 Markdown 排版。"
 )
+
+# 记忆缓存（避免每轮读磁盘 + 调 API）
+_mem_cache: dict = {"user_id": "", "last_check": 0, "context": ""}
+
+
+def _get_dynamic_system_prompt(api_key: str = "", query: str = "") -> str:
+    """构建动态 System Prompt：基础提示 + 长期记忆（缓存版本）。"""
+    import time, hashlib
+    uid = hashlib.sha256((api_key or "anon").encode()).hexdigest()[:16]
+
+    # 缓存：同一用户60秒内复用
+    now = time.time()
+    if _mem_cache["user_id"] == uid and (now - _mem_cache["last_check"]) < 60:
+        return BASE_SYSTEM_PROMPT + _mem_cache["context"]
+
+    _mem_cache["user_id"] = uid
+    _mem_cache["last_check"] = now
+
+    try:
+        mem = build_memory_context(uid, query)
+        _mem_cache["context"] = mem
+        return BASE_SYSTEM_PROMPT + mem
+    except Exception:
+        return BASE_SYSTEM_PROMPT
 
 
 # ============================================================
@@ -55,7 +81,7 @@ def call_vlm_node(state: AgentState) -> dict:
         return {"messages": [AIMessage(content="没有收到任何输入。")]}
 
     llm = ChatDoubaoVL()
-    all_messages = [SystemMessage(content=SYSTEM_PROMPT)] + list(messages)
+    all_messages = [SystemMessage(content=_get_dynamic_system_prompt())] + list(messages)
     response = llm.invoke(all_messages)
     return {"messages": [response]}
 
@@ -121,8 +147,9 @@ async def stream_graph(
     else:
         relevant = []
 
-    # 3. 拼装：系统提示 + 检索到的相关历史 + 本轮新消息
-    all_messages = [SystemMessage(content=SYSTEM_PROMPT)] + relevant + [input_msg]
+    # 3. 拼装：动态系统提示（含长期记忆） + 近期历史 + 本轮新消息
+    system_prompt = _get_dynamic_system_prompt(query=user_text or "")
+    all_messages = [SystemMessage(content=system_prompt)] + relevant + [input_msg]
 
     # 4. 直接流式调用 ChatDoubaoVL
     llm = ChatDoubaoVL()

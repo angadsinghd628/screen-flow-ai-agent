@@ -39,6 +39,16 @@ from config import (
 from utils.image_tool import qimage_to_pil, pil_to_base64, compress_image
 from utils.context_store import load_context, save_context
 from utils.ocr_tool import ocr_recognize_batch
+from utils.user_manager import (
+    user_id_from_key, new_conversation, save_conversation,
+    load_conversation, list_conversations, delete_conversation,
+    get_active_conversation_id, set_active_conversation_id,
+    get_last_conversation,
+)
+from utils.memory_store import (
+    load_profile, save_profile, extract_facts_from_conversation,
+    merge_facts, build_memory_context,
+)
 from utils.api_key_manager import get_api_key, set_api_key, set_model, get_model, get_proxy
 from agent.graph import build_graph, stream_graph
 from agent.llm_client import build_multimodal_message
@@ -100,9 +110,40 @@ class ScreenAIAgent(QObject):
         self._thread_id = "default"
         self._hotkey_registered = False
 
-        # 对话历史
-        self._messages: List[BaseMessage] = load_context(CONTEXT_FILE)
-        print(f"[AIRAG] 已加载 {len(self._messages)} 条历史消息")
+        # 用户系统
+        self._user_id = user_id_from_key(get_api_key())
+        self._active_conv_id = get_active_conversation_id()
+        print(f"[AIRAG] 用户ID: {self._user_id}")
+
+        # 长期记忆
+        self._profile = load_profile(self._user_id)
+        self._memory_needs_extract = False  # 是否需要提取记忆
+
+        # 加载对话：优先活跃对话，其次最近对话
+        loaded_from_conv = False
+        if self._active_conv_id:
+            conv = load_conversation(self._user_id, self._active_conv_id)
+            if conv:
+                self._messages = self._conv_to_langchain(conv.get("messages", []))
+                self._active_conv_id = conv["id"]
+                loaded_from_conv = True
+                print(f"[AIRAG] 已加载对话: {conv.get('title', '')} ({len(self._messages)} 条)")
+
+        if not loaded_from_conv:
+            # 尝试加载最近对话
+            last_conv = get_last_conversation(self._user_id)
+            if last_conv:
+                self._messages = self._conv_to_langchain(last_conv.get("messages", []))
+                self._active_conv_id = last_conv["id"]
+                set_active_conversation_id(self._user_id, self._active_conv_id)
+                print(f"[AIRAG] 已加载最近对话: {last_conv.get('title', '')}")
+            else:
+                # 全新用户
+                conv = new_conversation(self._user_id, "新对话")
+                self._active_conv_id = conv["id"]
+                set_active_conversation_id(self._user_id, self._active_conv_id)
+                self._messages = []
+                print("[AIRAG] 新建对话")
 
         # LangGraph
         self._graph = build_graph()
@@ -113,6 +154,10 @@ class ScreenAIAgent(QObject):
         self._result_window.follow_up_requested.connect(self._on_follow_up)
         self._result_window.model_changed.connect(self._on_model_changed)
         self._result_window.settings_requested.connect(self._change_api_key)
+        # 侧边栏按钮
+        self._result_window._sidebar_btn.clicked.connect(self._toggle_sidebar)
+        self._sidebar_visible = False
+        self._sidebar = None
         self._result_window.show()
         self._stream_worker: Optional[StreamWorker] = None
         self._capture_win: Optional[CaptureWindow] = None
@@ -211,9 +256,13 @@ class ScreenAIAgent(QObject):
             self._start_capture_flow()
 
     def _quit_app(self):
-        """退出程序。"""
+        """退出程序 — 保存对话 + 提取记忆。"""
         print("[AIRAG] 正在退出...")
-        save_context(self._messages, CONTEXT_FILE)
+        # 保存对话
+        self._save_current_conv()
+        set_active_conversation_id(self._user_id, self._active_conv_id)
+        # 后台提取记忆（快速版：最多等2秒）
+        self._extract_memory_background()
         try:
             if hasattr(self, '_hotkey_listener') and self._hotkey_listener:
                 self._hotkey_listener.stop()
@@ -458,9 +507,9 @@ class ScreenAIAgent(QObject):
             ai_msg = AIMessage(content=full_response.strip())
             self._messages.append(ai_msg)
 
-        # 保存全部历史（不再裁剪，检索时智能选取相关消息）
-        save_context(self._messages, CONTEXT_FILE)
-        print(f"[AIRAG] 上下文已保存 ({len(self._messages)} 条消息，检索模块将智能选取相关历史)")
+        # 保存到对话 JSON + context_history
+        self._save_current_conv()
+        print(f"[AIRAG] 对话已保存 ({len(self._messages)} 条消息)")
 
         self._stream_worker = None
         self._last_image_b64_list = []
@@ -474,6 +523,176 @@ class ScreenAIAgent(QObject):
                 f"请检查 API Key 和网络连接。"
             )
         self._stream_worker = None
+
+    # ============================================================
+    # Conversation Helpers
+    # ============================================================
+
+    def _conv_to_langchain(self, raw_messages: list) -> List[BaseMessage]:
+        """将对话 JSON 中的消息转为 LangChain 消息。"""
+        result = []
+        for m in raw_messages:
+            role = m.get("role", "user")
+            content = m.get("content", "")
+            if role == "user":
+                result.append(HumanMessage(content=content))
+            else:
+                result.append(AIMessage(content=content))
+        return result
+
+    def _messages_to_dicts(self) -> list:
+        """将 LangChain 消息列表转为可序列化的 dict 列表。"""
+        result = []
+        for m in self._messages:
+            role = "user" if isinstance(m, HumanMessage) else "assistant"
+            content = m.content
+            result.append({"role": role, "content": content})
+        return result
+
+    def _save_current_conv(self):
+        """保存当前对话到 JSON + context_history。"""
+        conv = {
+            "id": self._active_conv_id,
+            "title": "新对话",
+            "model": "",
+            "messages": self._messages_to_dicts(),
+        }
+        save_conversation(self._user_id, conv)
+        save_context(self._messages, CONTEXT_FILE)
+
+    # ============================================================
+    # Sidebar
+    # ============================================================
+
+    def _toggle_sidebar(self):
+        """切换侧边栏显示/隐藏。"""
+        if self._sidebar_visible:
+            self._hide_sidebar()
+        else:
+            self._show_sidebar()
+
+    def _show_sidebar(self):
+        """展开侧边栏。"""
+        from gui.sidebar_widget import SidebarWidget
+        if self._sidebar is None:
+            self._sidebar = SidebarWidget()
+            self._sidebar.conversation_selected.connect(self._on_conv_selected)
+            self._sidebar.new_conversation_clicked.connect(self._on_new_conv)
+            self._sidebar.settings_clicked.connect(self._change_api_key)
+        # 放在悬浮窗左边
+        rw = self._result_window
+        self._sidebar.setParent(rw)
+        self._sidebar.move(-222, 0)
+        self._sidebar.show()
+        self._refresh_sidebar()
+        self._sidebar_visible = True
+        self._result_window._sidebar_btn.setText("✕")
+
+    def _hide_sidebar(self):
+        if self._sidebar:
+            self._sidebar.hide()
+        self._sidebar_visible = False
+        self._result_window._sidebar_btn.setText("☰")
+
+    def _refresh_sidebar(self):
+        if self._sidebar:
+            convs = list_conversations(self._user_id)
+            self._sidebar.set_conversations(convs, self._active_conv_id)
+
+    def _on_conv_selected(self, conv_id: str):
+        """用户点击侧边栏对话 → 切换。"""
+        if conv_id == self._active_conv_id:
+            return
+        # 保存当前对话 + 提取记忆（后台）
+        self._save_current_conv()
+        self._extract_memory_background()
+        # 加载新对话
+        conv = load_conversation(self._user_id, conv_id)
+        if conv:
+            self._messages = self._conv_to_langchain(conv.get("messages", []))
+            self._active_conv_id = conv_id
+            set_active_conversation_id(self._user_id, conv_id)
+            # 恢复显示
+            self._result_window.clear_content()
+            if self._messages:
+                self._restore_conv_display()
+            self._refresh_sidebar()
+            print(f"[AIRAG] 已切换到: {conv.get('title', '')}")
+
+    def _on_new_conv(self):
+        """新建对话。"""
+        self._save_current_conv()
+        self._extract_memory_background()
+        conv = new_conversation(self._user_id, "新对话")
+        self._active_conv_id = conv["id"]
+        set_active_conversation_id(self._user_id, self._active_conv_id)
+        self._messages = []
+        self._result_window.clear_content()
+        self._result_window.clear_pending_images()
+        self._refresh_sidebar()
+        print("[AIRAG] 新建对话")
+
+    def _restore_conv_display(self):
+        """恢复对话内容到 ResultWindow。"""
+        text = ""
+        for m in self._messages:
+            role = "你" if isinstance(m, HumanMessage) else "AI"
+            icon = "💬" if isinstance(m, HumanMessage) else "🤖"
+            content = m.content
+            if isinstance(content, str):
+                text += f"\n\n**{icon} {role}：** {content}"
+        if text:
+            self._result_window.set_content(text.strip())
+
+    # ============================================================
+    # Memory Extraction (Background Thread)
+    # ============================================================
+
+    def _extract_memory_background(self):
+        """后台提取长期记忆（不阻塞用户）。"""
+        if len(self._messages) < 6:  # 对话太短不提取
+            return
+        # 在 QThread 中运行，不阻塞 UI
+        class MemWorker(QThread):
+            finished = pyqtSignal(list)
+            def __init__(self, messages, user_id):
+                super().__init__()
+                self._msgs = [{"role": "user" if isinstance(m, HumanMessage) else "assistant",
+                               "content": m.content} for m in messages]
+                self._uid = user_id
+            def run(self):
+                facts = extract_facts_from_conversation(self._msgs, self._uid)
+                self.finished.emit(facts)
+
+        self._mem_worker = MemWorker(list(self._messages), self._user_id)
+        self._mem_worker.finished.connect(self._on_mem_extracted)
+        self._mem_worker.start()
+
+    def _on_mem_extracted(self, facts: list):
+        """记忆提取完成 → 合并到 profile。"""
+        if not facts:
+            return
+        self._profile = load_profile(self._user_id)
+        old_count = len(self._profile.get("facts", []))
+        self._profile["facts"] = merge_facts(self._profile.get("facts", []), facts)
+        self._profile["stats"]["total_conversations"] += 1
+        save_profile(self._user_id, self._profile)
+        new_count = len(self._profile.get("facts", []))
+        if new_count > old_count:
+            print(f"[Memory] 提取了 {new_count - old_count} 条新记忆（共 {new_count} 条）")
+
+    def _extract_memory_on_exit(self):
+        """退出时同步提取记忆（等完成再退出）。"""
+        if len(self._messages) < 6:
+            return
+        msgs = [{"role": "user" if isinstance(m, HumanMessage) else "assistant",
+                 "content": m.content} for m in self._messages]
+        facts = extract_facts_from_conversation(msgs, self._user_id)
+        if facts:
+            self._profile = load_profile(self._user_id)
+            self._profile["facts"] = merge_facts(self._profile.get("facts", []), facts)
+            save_profile(self._user_id, self._profile)
+            print(f"[Memory] 退出时保存记忆")
 
     # ============================================================
     # History
