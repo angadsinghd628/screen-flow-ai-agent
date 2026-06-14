@@ -158,6 +158,7 @@ class ScreenAIAgent(QObject):
         self._result_window.set_sidebar_listener(
             on_select=self._on_conv_selected,
             on_new=self._on_new_conv,
+            on_refresh=self._refresh_sidebar,
         )
         self._refresh_sidebar()
         self._result_window.show()

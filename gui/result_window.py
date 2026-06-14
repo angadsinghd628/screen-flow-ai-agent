@@ -9,7 +9,7 @@
   - 右键菜单：清空/复制/关闭
 """
 import re
-from PyQt6.QtCore import Qt, QPoint, QSize, QRect, QTimer, pyqtSignal, QEvent
+from PyQt6.QtCore import Qt, QPoint, QSize, QRect, QTimer, pyqtSignal
 from gui.sidebar_widget import SidebarWidget
 from PyQt6.QtGui import (
     QFont, QColor, QPalette, QAction, QImage,
@@ -66,12 +66,6 @@ class ResultWindow(QWidget):
 
         self._setup_ui()
 
-    # Popup 窗口不自动关闭
-    def event(self, e):
-        if e.type() == QEvent.Type.WindowDeactivate:
-            return True  # 阻止 Popup 自动隐藏
-        return super().event(e)
-
     # ============================================================
     # Sidebar wrapper
     # ============================================================
@@ -85,9 +79,15 @@ class ResultWindow(QWidget):
         if hasattr(self, '_conv_listener_new') and self._conv_listener_new:
             self._conv_listener_new()
 
-    def set_sidebar_listener(self, on_select, on_new):
+    def _on_sidebar_refresh(self):
+        """仅刷新侧边栏列表，不切换对话。"""
+        if hasattr(self, '_conv_refresh_listener') and self._conv_refresh_listener:
+            self._conv_refresh_listener()
+
+    def set_sidebar_listener(self, on_select, on_new, on_refresh=None):
         self._conv_listener = on_select
         self._conv_listener_new = on_new
+        self._conv_refresh_listener = on_refresh
 
     def _toggle_sidebar(self):
         self._sidebar_visible = not self._sidebar_visible
@@ -108,11 +108,11 @@ class ResultWindow(QWidget):
     # ============================================================
 
     def _setup_ui(self):
-        # Popup 标志：不显示在任务栏，只显示在托盘
+        # Tool 标志：不显示在任务栏，只显示在托盘
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.Popup
+            Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
         self.setWindowOpacity(RESULT_WINDOW_OPACITY)
@@ -138,6 +138,7 @@ class ResultWindow(QWidget):
         self._sidebar_widget = SidebarWidget()
         self._sidebar_widget.conversation_selected.connect(self._on_sidebar_conv_selected)
         self._sidebar_widget.new_conversation_clicked.connect(self._on_sidebar_new_conv)
+        self._sidebar_widget.refresh_requested.connect(self._on_sidebar_refresh)
         self._sidebar_widget.setFixedWidth(180)
         self._sidebar_visible = False
         self._sidebar_widget.hide()

@@ -13,10 +13,10 @@ from PyQt6.QtWidgets import (
 class SidebarWidget(QWidget):
     """对话历史侧边栏。"""
 
-    # 信号：切换到指定对话
-    conversation_selected = pyqtSignal(str)   # conv_id
+    # 信号：切换到指定对话 / 新建 / 需要刷新列表
+    conversation_selected = pyqtSignal(str)
     new_conversation_clicked = pyqtSignal()
-    settings_clicked = pyqtSignal()
+    refresh_requested = pyqtSignal()  # 仅刷新列表，不新建对话
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -200,7 +200,7 @@ class SidebarWidget(QWidget):
         if reply == QMessageBox.StandardButton.Yes:
             from utils.user_manager import delete_conversation
             delete_conversation("", conv_id)
-            self.new_conversation_clicked.emit()
+            self.refresh_requested.emit()
 
     def _rename_dialog(self, conv_id: str):
         """弹出重命名输入框。"""
@@ -217,7 +217,7 @@ class SidebarWidget(QWidget):
         if ok and new_title.strip() and new_title.strip() != old_title:
             conv["title"] = new_title.strip()
             save_conversation("", conv)
-            self.new_conversation_clicked.emit()
+            self.refresh_requested.emit()
 
     def _on_context_menu(self, pos, conv_id: str):
         from PyQt6.QtWidgets import QMenu
