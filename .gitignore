@@ -10,9 +10,10 @@ dist/
 build/
 dist/
 
-# User data (API keys, chat history)
+# User data (API keys, chat history, conversations)
 airag_config.json
 context_history.json
+airag_data/
 
 # Virtual environment
 venv/
