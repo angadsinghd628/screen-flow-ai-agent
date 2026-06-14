@@ -9,7 +9,8 @@
   - 右键菜单：清空/复制/关闭
 """
 import re
-from PyQt6.QtCore import Qt, QPoint, QSize, QRect, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QPoint, QSize, QRect, QTimer, pyqtSignal, QEvent
+from gui.sidebar_widget import SidebarWidget
 from PyQt6.QtGui import (
     QFont, QColor, QPalette, QAction, QImage,
     QTextCursor, QMouseEvent, QCursor, QPixmap,
@@ -65,20 +66,47 @@ class ResultWindow(QWidget):
 
         self._setup_ui()
 
+    # Popup 窗口不自动关闭
+    def event(self, e):
+        if e.type() == QEvent.Type.WindowDeactivate:
+            return True  # 阻止 Popup 自动隐藏
+        return super().event(e)
+
+    # ============================================================
+    # Sidebar wrapper
+    # ============================================================
+
+    def _on_sidebar_conv_selected(self, conv_id: str):
+        """侧边栏切换对话 → 转发给外部监听者。"""
+        if hasattr(self, '_conv_listener') and self._conv_listener:
+            self._conv_listener(conv_id)
+
+    def _on_sidebar_new_conv(self):
+        if hasattr(self, '_conv_listener_new') and self._conv_listener_new:
+            self._conv_listener_new()
+
+    def set_sidebar_listener(self, on_select, on_new):
+        self._conv_listener = on_select
+        self._conv_listener_new = on_new
+
+    def refresh_sidebar(self, convs: list, active_id: str):
+        self._sidebar_widget.set_conversations(convs, active_id)
+
     # ============================================================
     # UI Setup
     # ============================================================
 
     def _setup_ui(self):
+        # Popup 标志：不显示在任务栏，只显示在托盘
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.Tool
+            Qt.WindowType.Popup
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
         self.setWindowOpacity(RESULT_WINDOW_OPACITY)
         self.setMinimumSize(MIN_WIDTH, MIN_HEIGHT)
-        self.resize(RESULT_WINDOW_WIDTH, RESULT_WINDOW_HEIGHT)
+        self.resize(RESULT_WINDOW_WIDTH + 220, RESULT_WINDOW_HEIGHT)  # 给侧边栏留空间
         self._position_bottom_right()
 
         # 深色半透明背景
@@ -90,8 +118,28 @@ class ResultWindow(QWidget):
         # 启用鼠标追踪（边缘检测需要）
         self.setMouseTracking(True)
 
-        # 主布局
-        layout = QVBoxLayout(self)
+        # 主布局（水平：侧边栏 + 右侧内容）
+        self._main_h_layout = QHBoxLayout(self)
+        self._main_h_layout.setContentsMargins(0, 0, 0, 0)
+        self._main_h_layout.setSpacing(0)
+
+        # 侧边栏（内嵌）
+        self._sidebar_widget = SidebarWidget()
+        self._sidebar_widget.conversation_selected.connect(self._on_sidebar_conv_selected)
+        self._sidebar_widget.new_conversation_clicked.connect(self._on_sidebar_new_conv)
+        self._sidebar_widget.settings_clicked.connect(lambda: self.settings_requested.emit())
+        self._sidebar_widget.setFixedWidth(200)
+        self._main_h_layout.addWidget(self._sidebar_widget)
+
+        # 分隔线
+        sep = QWidget()
+        sep.setFixedWidth(1)
+        sep.setStyleSheet("background: #3a3a45;")
+        self._main_h_layout.addWidget(sep)
+
+        # 右侧内容区
+        right_widget = QWidget()
+        layout = QVBoxLayout(right_widget)
         layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(4)
 
@@ -290,6 +338,9 @@ class ResultWindow(QWidget):
         ask_layout.addWidget(send_btn)
 
         layout.addLayout(ask_layout)
+
+        # 右侧区域加入水平布局
+        self._main_h_layout.addWidget(right_widget, stretch=1)
 
     # ============================================================
     # Positioning

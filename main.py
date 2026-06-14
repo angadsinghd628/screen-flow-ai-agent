@@ -33,7 +33,7 @@ from pynput import keyboard as pynput_keyboard
 from langchain_core.messages import BaseMessage, AIMessage, HumanMessage
 
 from config import (
-    DEFAULT_HOTKEY, TOGGLE_HOTKEY, OCR_HOTKEY,
+    DEFAULT_HOTKEY, TOGGLE_HOTKEY, OCR_HOTKEY, QUIT_HOTKEY,
     CONTEXT_FILE, HTTP_PROXY, RECENT_ROUNDS,
 )
 from utils.image_tool import qimage_to_pil, pil_to_base64, compress_image
@@ -149,15 +149,17 @@ class ScreenAIAgent(QObject):
         self._graph = build_graph()
         print("[AIRAG] LangGraph 状态机已就绪")
 
-        # UI 组件 — ResultWindow 常驻显示
+        # UI 组件 — ResultWindow 常驻显示（内嵌侧边栏）
         self._result_window = ResultWindow()
         self._result_window.follow_up_requested.connect(self._on_follow_up)
         self._result_window.model_changed.connect(self._on_model_changed)
         self._result_window.settings_requested.connect(self._change_api_key)
-        # 侧边栏按钮
-        self._result_window._sidebar_btn.clicked.connect(self._toggle_sidebar)
-        self._sidebar_visible = False
-        self._sidebar = None
+        # 侧边栏：内嵌在 ResultWindow 中
+        self._result_window.set_sidebar_listener(
+            on_select=self._on_conv_selected,
+            on_new=self._on_new_conv,
+        )
+        self._refresh_sidebar()
         self._result_window.show()
         self._stream_worker: Optional[StreamWorker] = None
         self._capture_win: Optional[CaptureWindow] = None
@@ -283,6 +285,7 @@ class ScreenAIAgent(QObject):
                 '<ctrl>+d': self._on_hotkey_triggered,
                 '<ctrl>+f': self._on_hotkey_toggle,
                 '<ctrl>+r': self._on_ocr_hotkey,
+                '<ctrl>+q': self._on_quit_hotkey,
             }
             self._hotkey_listener = pynput_keyboard.GlobalHotKeys(
                 hotkeys, suppress=False)  # suppress=False 让 Ctrl+Z 等正常传递
@@ -292,6 +295,7 @@ class ScreenAIAgent(QObject):
             print(f"         Ctrl+D — 截图发送")
             print(f"         Ctrl+R — OCR 文字识别")
             print(f"         Ctrl+F — 隐藏/显示窗口")
+            print(f"         Ctrl+Q — 退出程序")
         except Exception as e:
             self._hotkey_registered = False
             self._hotkey_listener = None
@@ -564,40 +568,13 @@ class ScreenAIAgent(QObject):
     # Sidebar
     # ============================================================
 
-    def _toggle_sidebar(self):
-        """切换侧边栏显示/隐藏。"""
-        if self._sidebar_visible:
-            self._hide_sidebar()
-        else:
-            self._show_sidebar()
-
-    def _show_sidebar(self):
-        """展开侧边栏。"""
-        from gui.sidebar_widget import SidebarWidget
-        if self._sidebar is None:
-            self._sidebar = SidebarWidget()
-            self._sidebar.conversation_selected.connect(self._on_conv_selected)
-            self._sidebar.new_conversation_clicked.connect(self._on_new_conv)
-            self._sidebar.settings_clicked.connect(self._change_api_key)
-        # 放在悬浮窗左边
-        rw = self._result_window
-        self._sidebar.setParent(rw)
-        self._sidebar.move(-222, 0)
-        self._sidebar.show()
-        self._refresh_sidebar()
-        self._sidebar_visible = True
-        self._result_window._sidebar_btn.setText("✕")
-
-    def _hide_sidebar(self):
-        if self._sidebar:
-            self._sidebar.hide()
-        self._sidebar_visible = False
-        self._result_window._sidebar_btn.setText("☰")
+    def _on_quit_hotkey(self, key=None):
+        """Ctrl+Q → 退出程序。"""
+        QTimer.singleShot(0, self._quit_app)
 
     def _refresh_sidebar(self):
-        if self._sidebar:
-            convs = list_conversations(self._user_id)
-            self._sidebar.set_conversations(convs, self._active_conv_id)
+        convs = list_conversations(self._user_id)
+        self._result_window.refresh_sidebar(convs, self._active_conv_id)
 
     def _on_conv_selected(self, conv_id: str):
         """用户点击侧边栏对话 → 切换。"""
