@@ -89,6 +89,17 @@ class ResultWindow(QWidget):
         self._conv_listener = on_select
         self._conv_listener_new = on_new
 
+    def _toggle_sidebar(self):
+        self._sidebar_visible = not self._sidebar_visible
+        if self._sidebar_visible:
+            self._sidebar_widget.show()
+            self._sidebar_sep.show()
+            self._sidebar_toggle_btn.setText("✕")
+        else:
+            self._sidebar_widget.hide()
+            self._sidebar_sep.hide()
+            self._sidebar_toggle_btn.setText("☰")
+
     def refresh_sidebar(self, convs: list, active_id: str):
         self._sidebar_widget.set_conversations(convs, active_id)
 
@@ -123,19 +134,21 @@ class ResultWindow(QWidget):
         self._main_h_layout.setContentsMargins(0, 0, 0, 0)
         self._main_h_layout.setSpacing(0)
 
-        # 侧边栏（内嵌）
+        # 侧边栏（内嵌，默认隐藏）
         self._sidebar_widget = SidebarWidget()
         self._sidebar_widget.conversation_selected.connect(self._on_sidebar_conv_selected)
         self._sidebar_widget.new_conversation_clicked.connect(self._on_sidebar_new_conv)
-        self._sidebar_widget.settings_clicked.connect(lambda: self.settings_requested.emit())
-        self._sidebar_widget.setFixedWidth(200)
+        self._sidebar_widget.setFixedWidth(180)
+        self._sidebar_visible = False
+        self._sidebar_widget.hide()
         self._main_h_layout.addWidget(self._sidebar_widget)
 
-        # 分隔线
-        sep = QWidget()
-        sep.setFixedWidth(1)
-        sep.setStyleSheet("background: #3a3a45;")
-        self._main_h_layout.addWidget(sep)
+        # 分隔线（跟随侧边栏显隐）
+        self._sidebar_sep = QWidget()
+        self._sidebar_sep.setFixedWidth(1)
+        self._sidebar_sep.setStyleSheet("background: #3a3a45;")
+        self._sidebar_sep.hide()
+        self._main_h_layout.addWidget(self._sidebar_sep)
 
         # 右侧内容区
         right_widget = QWidget()
@@ -148,15 +161,16 @@ class ResultWindow(QWidget):
         title_bar.setSpacing(6)
 
         # 侧边栏切换按钮
-        self._sidebar_btn = QPushButton("☰")
-        self._sidebar_btn.setFixedSize(26, 26)
-        self._sidebar_btn.setToolTip("对话历史")
-        self._sidebar_btn.setStyleSheet("""
+        self._sidebar_toggle_btn = QPushButton("☰")
+        self._sidebar_toggle_btn.setFixedSize(26, 26)
+        self._sidebar_toggle_btn.setToolTip("显示/隐藏对话历史")
+        self._sidebar_toggle_btn.setStyleSheet("""
             QPushButton { background: #3a3a40; color: #ccc; border: none;
                 border-radius: 4px; font-size: 14px; font-weight: bold; }
             QPushButton:hover { background: #555; color: white; }
         """)
-        title_bar.addWidget(self._sidebar_btn)
+        self._sidebar_toggle_btn.clicked.connect(self._toggle_sidebar)
+        title_bar.addWidget(self._sidebar_toggle_btn)
 
         self._title_label = QLabel("Ai_Flow")
         self._title_label.setFont(QFont("Microsoft YaHei", 11))

@@ -85,18 +85,6 @@ class SidebarWidget(QWidget):
         self._list_scroll.setWidget(self._list_widget)
         layout.addWidget(self._list_scroll, stretch=1)
 
-        # 设置按钮
-        set_btn = QPushButton("⚙ 设置")
-        set_btn.setStyleSheet("""
-            QPushButton {
-                background: #3a3a40; color: #aaa; border: 1px solid #555;
-                border-radius: 4px; padding: 5px; font-size: 11px;
-            }
-            QPushButton:hover { background: #555; color: #fff; }
-        """)
-        set_btn.clicked.connect(self.settings_clicked.emit)
-        layout.addWidget(set_btn)
-
     # ============================================================
     # Public API
     # ============================================================
