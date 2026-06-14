@@ -159,6 +159,7 @@ class ScreenAIAgent(QObject):
             on_select=self._on_conv_selected,
             on_new=self._on_new_conv,
             on_refresh=self._refresh_sidebar,
+            user_id=self._user_id,
         )
         self._refresh_sidebar()
         self._result_window.show()

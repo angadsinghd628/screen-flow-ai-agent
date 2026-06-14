@@ -13,17 +13,20 @@ from PyQt6.QtWidgets import (
 class SidebarWidget(QWidget):
     """对话历史侧边栏。"""
 
-    # 信号：切换到指定对话 / 新建 / 需要刷新列表
     conversation_selected = pyqtSignal(str)
     new_conversation_clicked = pyqtSignal()
-    refresh_requested = pyqtSignal()  # 仅刷新列表，不新建对话
+    refresh_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedWidth(220)
         self._conversations = []
         self._active_id = ""
+        self._user_id = ""  # 由外部设置
         self._setup_ui()
+
+    def set_user_id(self, user_id: str):
+        self._user_id = user_id
 
     def _setup_ui(self):
         self.setStyleSheet("""
@@ -199,14 +202,14 @@ class SidebarWidget(QWidget):
         )
         if reply == QMessageBox.StandardButton.Yes:
             from utils.user_manager import delete_conversation
-            delete_conversation("", conv_id)
+            delete_conversation(self._user_id, conv_id)
             self.refresh_requested.emit()
 
     def _rename_dialog(self, conv_id: str):
         """弹出重命名输入框。"""
         from PyQt6.QtWidgets import QInputDialog
         from utils.user_manager import load_conversation, save_conversation
-        conv = load_conversation("", conv_id)
+        conv = load_conversation(self._user_id, conv_id)
         if not conv:
             return
         old_title = conv.get("title", "")
@@ -216,7 +219,7 @@ class SidebarWidget(QWidget):
         )
         if ok and new_title.strip() and new_title.strip() != old_title:
             conv["title"] = new_title.strip()
-            save_conversation("", conv)
+            save_conversation(self._user_id, conv)
             self.refresh_requested.emit()
 
     def _on_context_menu(self, pos, conv_id: str):

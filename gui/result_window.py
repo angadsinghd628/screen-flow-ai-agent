@@ -84,10 +84,11 @@ class ResultWindow(QWidget):
         if hasattr(self, '_conv_refresh_listener') and self._conv_refresh_listener:
             self._conv_refresh_listener()
 
-    def set_sidebar_listener(self, on_select, on_new, on_refresh=None):
+    def set_sidebar_listener(self, on_select, on_new, on_refresh=None, user_id=""):
         self._conv_listener = on_select
         self._conv_listener_new = on_new
         self._conv_refresh_listener = on_refresh
+        self._sidebar_widget.set_user_id(user_id)
 
     def _toggle_sidebar(self):
         self._sidebar_visible = not self._sidebar_visible
