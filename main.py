@@ -30,7 +30,7 @@ from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 
 from pynput import keyboard as pynput_keyboard
-from langchain_core.messages import BaseMessage, AIMessage
+from langchain_core.messages import BaseMessage, AIMessage, HumanMessage
 
 from config import (
     DEFAULT_HOTKEY, TOGGLE_HOTKEY, OCR_HOTKEY,
