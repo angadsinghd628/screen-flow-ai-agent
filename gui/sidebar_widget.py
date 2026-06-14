@@ -2,7 +2,7 @@
 侧边栏 — 对话历史列表 + 新建/切换/删除。
 """
 from datetime import datetime
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QEvent
 from PyQt6.QtGui import QFont, QColor, QPalette
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
@@ -128,34 +128,96 @@ class SidebarWidget(QWidget):
                 self._list_layout.insertWidget(self._list_layout.count() - 1, btn)
 
     def _make_conv_item(self, conv: dict) -> QWidget:
-        """创建单个对话条目。"""
+        """创建单个对话条目（标题 + 删除按钮）。"""
         cid = conv.get("id", "")
-        title = conv.get("title", "未命名")[:20]
-        created = conv.get("created", "")[11:16]  # HH:MM
+        title = conv.get("title", "未命名")[:16]
+        created = conv.get("created", "")[11:16]
         count = conv.get("msg_count", 0)
         is_active = cid == self._active_id
 
+        container = QWidget()
+        container.setStyleSheet("background: transparent;")
+        hbox = QHBoxLayout(container)
+        hbox.setContentsMargins(0, 0, 0, 0)
+        hbox.setSpacing(2)
+
+        # 主按钮（点击切换）
         btn = QPushButton()
         bg = "#2a4a6a" if is_active else "#2a2a35"
+        label = f"{created}  {title}"
+        if count > 0:
+            label += f"  ({count})"
+        btn.setText(label)
         btn.setStyleSheet(f"""
             QPushButton {{
                 background: {bg}; color: #ccc; border: none;
-                border-radius: 4px; padding: 6px 8px; font-size: 11px;
+                border-radius: 4px; padding: 6px 6px; font-size: 11px;
                 text-align: left;
             }}
             QPushButton:hover {{ background: #3a5a7a; }}
         """)
-        btn.setText(f"{created}  {title}")
-        if count > 0:
-            btn.setText(f"{created}  {title}  ({count})")
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
-
-        # 右键删除
-        btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        btn.customContextMenuRequested.connect(lambda pos, cid=cid: self._on_context_menu(pos, cid))
         btn.clicked.connect(lambda: self.conversation_selected.emit(cid))
+        btn.setToolTip("双击重命名")
+        btn.installEventFilter(self)
+        btn.setProperty("conv_id", cid)
+        hbox.addWidget(btn, stretch=1)
 
-        return btn
+        # 删除按钮
+        del_btn = QPushButton("×")
+        del_btn.setFixedSize(20, 20)
+        del_btn.setStyleSheet("""
+            QPushButton {
+                background: transparent; color: #888; border: none;
+                border-radius: 10px; font-size: 13px; font-weight: bold;
+            }
+            QPushButton:hover { background: #c0392b; color: white; }
+        """)
+        del_btn.setToolTip("删除此对话")
+        del_btn.clicked.connect(lambda checked, c=cid, t=title: self._confirm_delete(c, t))
+        hbox.addWidget(del_btn)
+
+        return container
+
+    def eventFilter(self, obj, event):
+        """双击重命名。"""
+        if event.type() == QEvent.Type.MouseButtonDblClick:
+            conv_id = obj.property("conv_id")
+            if conv_id:
+                self._rename_dialog(conv_id)
+                return True
+        return super().eventFilter(obj, event)
+
+    def _confirm_delete(self, conv_id: str, title: str):
+        """弹出确认删除对话框。"""
+        from PyQt6.QtWidgets import QMessageBox
+        reply = QMessageBox.question(
+            self, "删除对话",
+            f"确定要删除「{title}」吗？\n此操作不可恢复。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            from utils.user_manager import delete_conversation
+            delete_conversation("", conv_id)
+            self.new_conversation_clicked.emit()
+
+    def _rename_dialog(self, conv_id: str):
+        """弹出重命名输入框。"""
+        from PyQt6.QtWidgets import QInputDialog
+        from utils.user_manager import load_conversation, save_conversation
+        conv = load_conversation("", conv_id)
+        if not conv:
+            return
+        old_title = conv.get("title", "")
+        new_title, ok = QInputDialog.getText(
+            self, "重命名", "对话名称:",
+            text=old_title,
+        )
+        if ok and new_title.strip() and new_title.strip() != old_title:
+            conv["title"] = new_title.strip()
+            save_conversation("", conv)
+            self.new_conversation_clicked.emit()
 
     def _on_context_menu(self, pos, conv_id: str):
         from PyQt6.QtWidgets import QMenu
