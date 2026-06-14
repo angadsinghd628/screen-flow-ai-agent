@@ -113,7 +113,8 @@ class ResultWindow(QWidget):
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.Tool
+            Qt.WindowType.Tool |
+            Qt.WindowType.NoDropShadowWindowHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
         self.setWindowOpacity(RESULT_WINDOW_OPACITY)
@@ -214,7 +215,7 @@ class ResultWindow(QWidget):
             }
             QPushButton:hover { background: #e74c3c; }
         """)
-        close_btn.clicked.connect(self.hide)
+        close_btn.clicked.connect(self.close)
         title_bar.addWidget(close_btn)
 
         layout.addLayout(title_bar)
@@ -888,6 +889,11 @@ class ResultWindow(QWidget):
             geo.setTop(min(geo.bottom() - MIN_HEIGHT, geo.top() + dy))
 
         self.setGeometry(geo)
+
+    def closeEvent(self, event):
+        """拦截关闭事件：只隐藏窗口不退出程序。"""
+        self.hide()
+        event.ignore()
 
     # ============================================================
     # Context Menu
