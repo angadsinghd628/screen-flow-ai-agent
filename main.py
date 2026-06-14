@@ -337,8 +337,11 @@ class ScreenAIAgent(QObject):
         """打开截图遮罩，OCR 模式。"""
         if self._capture_win is not None and self._capture_win.isVisible():
             return
+        self._result_window.hide()
+        QApplication.processEvents()
         self._capture_win = CaptureWindow()
         self._capture_win.captured.connect(self._on_ocr_captured)
+        self._capture_win.destroyed.connect(lambda: self._result_window.show() if not self._result_window.isVisible() else None)
         self._capture_win.showFullScreen()
 
     def _on_ocr_captured(self, images: list):
@@ -391,8 +394,13 @@ class ScreenAIAgent(QObject):
         if self._capture_win is not None and self._capture_win.isVisible():
             return
 
+        # 截图时隐藏悬浮窗，避免它出现在截图中
+        self._result_window.hide()
+        QApplication.processEvents()
+
         self._capture_win = CaptureWindow()
         self._capture_win.captured.connect(self._on_image_captured)
+        self._capture_win.destroyed.connect(lambda: self._result_window.show() if not self._result_window.isVisible() else None)
         self._capture_win.showFullScreen()
 
     def _on_image_captured(self, images: list):

@@ -118,6 +118,7 @@ class ResultWindow(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
         self.setWindowOpacity(RESULT_WINDOW_OPACITY)
+        self._win_hidden_done = False
         self.setMinimumSize(MIN_WIDTH, MIN_HEIGHT)
         self.resize(RESULT_WINDOW_WIDTH + 220, RESULT_WINDOW_HEIGHT)  # 给侧边栏留空间
         self._position_bottom_right()
@@ -889,6 +890,26 @@ class ResultWindow(QWidget):
             geo.setTop(min(geo.bottom() - MIN_HEIGHT, geo.top() + dy))
 
         self.setGeometry(geo)
+
+    def showEvent(self, event):
+        """窗口显示时：隐藏任务栏图标 + 防屏幕捕获。"""
+        super().showEvent(event)
+        if not self._win_hidden_done and self.winId():
+            self._win_hidden_done = True
+            try:
+                import ctypes
+                from PyQt6.QtCore import QTimer
+                hwnd = int(self.winId())
+                # 从任务栏隐藏
+                ctypes.windll.user32.SetWindowLongPtrW(hwnd, -20,
+                    ctypes.windll.user32.GetWindowLongPtrW(hwnd, -20) | 0x80)
+                # 防止被腾讯会议等屏幕共享捕获（Win10 2004+）
+                try:
+                    ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 0x11)
+                except Exception:
+                    pass
+            except Exception:
+                pass
 
     def closeEvent(self, event):
         """拦截关闭事件：只隐藏窗口不退出程序。"""
